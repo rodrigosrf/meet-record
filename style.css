@@ -97,6 +97,40 @@ header {
     transform: translateY(-2px);
 }
 
+.btn-folder-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: rgba(56, 189, 248, 0.05);
+    border: 1px solid rgba(56, 189, 248, 0.15);
+    color: var(--accent-color);
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    margin-left: 2px;
+}
+
+.btn-folder-link:hover {
+    background: var(--accent-color);
+    color: var(--bg-color);
+    border-color: var(--accent-color);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(56, 189, 248, 0.25);
+}
+
+.btn-folder-link svg {
+    transition: transform 0.3s ease;
+}
+
+.btn-folder-link:hover svg {
+    transform: scale(1.1);
+}
+
 main {
     flex: 1;
     display: flex;
@@ -363,6 +397,17 @@ footer {
 .transcription-item.error {
     border-color: var(--danger);
     background: rgba(239, 68, 68, 0.05);
+}
+
+.transcription-item.queued {
+    border-color: var(--text-secondary);
+    opacity: 0.8;
+}
+
+.transcription-item.queued .progress-mini-bar {
+    background: var(--text-secondary);
+    animation: none;
+    width: 10%;
 }
 
 .transcription-item .item-icon {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, desktopCapturer, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, shell } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
@@ -14,6 +14,8 @@ let mainWindow;
 let settingsWindow;
 let detectionInterval;
 const activeProcesses = new Map();
+const transcriptionQueue = [];
+let isProcessingQueue = false;
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -26,7 +28,7 @@ function createWindow() {
             nodeIntegration: false
         },
         autoHideMenuBar: true,
-        backgroundColor: '#0f172a' // Dark slate
+        backgroundColor: '#0f172a'
     });
 
     mainWindow.loadFile('index.html');
@@ -73,8 +75,7 @@ app.on('window-all-closed', function () {
 
 // IPC Handlers
 ipcMain.handle('get-sources', async () => {
-    const sources = await desktopCapturer.getSources({ types: ['window', 'screen'] });
-    return sources;
+    return await desktopCapturer.getSources({ types: ['window', 'screen'] });
 });
 
 ipcMain.handle('select-directory', async () => {
@@ -91,12 +92,33 @@ ipcMain.handle('select-directory', async () => {
 
 ipcMain.handle('get-config', () => {
     return {
-        outputDirectory: store.get('outputDirectory')
+        outputDirectory: store.get('outputDirectory'),
+        autoTranscribe: store.get('autoTranscribe', true)
     };
+});
+
+ipcMain.handle('update-config', (event, newConfig) => {
+    if (newConfig.outputDirectory !== undefined) {
+        store.set('outputDirectory', newConfig.outputDirectory);
+        mainWindow.webContents.send('config-updated', { outputDirectory: newConfig.outputDirectory });
+    }
+    if (newConfig.autoTranscribe !== undefined) {
+        store.set('autoTranscribe', newConfig.autoTranscribe);
+    }
+    return { success: true };
 });
 
 ipcMain.on('open-settings', () => {
     createSettingsWindow();
+});
+
+ipcMain.handle('open-output-directory', async () => {
+    const outputDir = store.get('outputDirectory');
+    if (outputDir && fs.existsSync(outputDir)) {
+        shell.openPath(outputDir);
+        return { success: true };
+    }
+    return { success: false, error: 'Diretório não configurado ou não encontrado.' };
 });
 
 ipcMain.handle('get-library-videos', async () => {
@@ -107,22 +129,17 @@ ipcMain.handle('get-library-videos', async () => {
     
     function scanDir(currentPath) {
         const files = fs.readdirSync(currentPath);
-        
         files.forEach(file => {
             const fullPath = path.join(currentPath, file);
             const stat = fs.statSync(fullPath);
-            
             if (stat.isDirectory()) {
                 scanDir(fullPath);
             } else if (file.endsWith('.webm')) {
                 const baseName = path.parse(file).name;
                 const dir = path.dirname(fullPath);
-                
-                // Check if any transcription files exist (.txt, .vtt, .srt, .json, .tsv)
                 const hasTranscription = fs.readdirSync(dir).some(f => 
                     f.startsWith(baseName) && (f.endsWith('.txt') || f.endsWith('.srt'))
                 );
-                
                 videos.push({
                     name: file,
                     path: fullPath,
@@ -135,7 +152,6 @@ ipcMain.handle('get-library-videos', async () => {
 
     try {
         scanDir(outputDir);
-        // Sort by date descending
         return videos.sort((a, b) => b.date - a.date);
     } catch (err) {
         console.error("Error scanning library:", err);
@@ -145,7 +161,7 @@ ipcMain.handle('get-library-videos', async () => {
 
 ipcMain.handle('request-transcription', async (event, filePath) => {
     if (fs.existsSync(filePath)) {
-        runTranscription(filePath);
+        addToTranscriptionQueue(filePath);
         return { success: true };
     }
     return { success: false, error: 'File not found' };
@@ -153,15 +169,20 @@ ipcMain.handle('request-transcription', async (event, filePath) => {
 
 ipcMain.handle('cancel-transcription', async (event, filePath) => {
     const childProcess = activeProcesses.get(filePath);
-    if (childProcess) {
-        childProcess.kill();
-        activeProcesses.delete(filePath);
+    const queueIndex = transcriptionQueue.indexOf(filePath);
+
+    if (childProcess || queueIndex > -1) {
+        if (childProcess) {
+            childProcess.kill();
+            activeProcesses.delete(filePath);
+        }
+        if (queueIndex > -1) {
+            transcriptionQueue.splice(queueIndex, 1);
+        }
         
-        // Clean up partial files
         const baseName = path.parse(filePath).name;
         const dir = path.dirname(filePath);
         const extensions = ['.txt', '.srt', '.vtt', '.tsv', '.json'];
-        
         try {
             const files = fs.readdirSync(dir);
             files.forEach(file => {
@@ -189,26 +210,22 @@ ipcMain.handle('save-file', async (event, { buffer, fileName }) => {
     const outputDir = store.get('outputDirectory');
     if (!outputDir) return { success: false, error: 'No output directory' };
 
-    // Get current date in MM-dd format
     const now = new Date();
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     const dateDir = `${month}-${day}`;
-    
     const targetDir = path.join(outputDir, dateDir);
     const filePath = path.join(targetDir, fileName);
 
     try {
-        // Create directory if it doesn't exist
         if (!fs.existsSync(targetDir)) {
             fs.mkdirSync(targetDir, { recursive: true });
         }
-
         fs.writeFileSync(filePath, Buffer.from(buffer));
         
-        // Trigger Whisper transcription
-        runTranscription(filePath);
-
+        if (store.get('autoTranscribe', true)) {
+            addToTranscriptionQueue(filePath);
+        }
         return { success: true, path: filePath };
     } catch (error) {
         console.error('Error saving file:', error);
@@ -216,8 +233,38 @@ ipcMain.handle('save-file', async (event, { buffer, fileName }) => {
     }
 });
 
+function addToTranscriptionQueue(filePath) {
+    if (transcriptionQueue.includes(filePath) || activeProcesses.has(filePath)) {
+        return;
+    }
+
+    transcriptionQueue.push(filePath);
+
+    if (mainWindow) {
+        mainWindow.webContents.send('transcription-status', { 
+            status: 'queued', 
+            file: path.basename(filePath),
+            fullPath: filePath 
+        });
+    }
+
+    if (!isProcessingQueue) {
+        processNextInQueue();
+    }
+}
+
+async function processNextInQueue() {
+    if (transcriptionQueue.length === 0) {
+        isProcessingQueue = false;
+        return;
+    }
+
+    isProcessingQueue = true;
+    const filePath = transcriptionQueue.shift();
+    runTranscription(filePath);
+}
+
 function runTranscription(filePath) {
-    console.log(`Starting transcription for: ${filePath}`);
     if (mainWindow) {
         mainWindow.webContents.send('transcription-status', { 
             status: 'started', 
@@ -226,17 +273,13 @@ function runTranscription(filePath) {
         });
     }
 
-    // whisper "path" --model medium --language Portuguese
     const command = `whisper "${filePath}" --model medium --language Portuguese --output_dir "${path.dirname(filePath)}"`;
     
     const childProcess = exec(command, (error, stdout, stderr) => {
         activeProcesses.delete(filePath);
         
         if (error) {
-            if (childProcess.killed) return; // Ignore errors if we killed it intentionally
-            
-            console.error(`Transcription error: ${error.message}`);
-            if (mainWindow) {
+            if (!childProcess.killed && mainWindow) {
                 mainWindow.webContents.send('transcription-status', { 
                     status: 'error', 
                     message: error.message,
@@ -244,10 +287,10 @@ function runTranscription(filePath) {
                     fullPath: filePath
                 });
             }
+            processNextInQueue();
             return;
         }
         
-        console.log(`Transcription finished: ${stdout}`);
         if (mainWindow) {
             mainWindow.webContents.send('transcription-status', { 
                 status: 'finished', 
@@ -255,16 +298,15 @@ function runTranscription(filePath) {
                 fullPath: filePath
             });
         }
+        processNextInQueue();
     });
 
     activeProcesses.set(filePath, childProcess);
 }
 
-// Detection Logic
 function startDetectionLoop() {
     detectionInterval = setInterval(async () => {
         try {
-            // First, get basic window titles as a fast check
             const sources = await desktopCapturer.getSources({ 
                 types: ['window'],
                 thumbnailSize: { width: 0, height: 0 }
@@ -285,18 +327,13 @@ function startDetectionLoop() {
                 return;
             }
 
-            // If we have potential windows, use the robust PowerShell check
             const scriptPath = path.join(__dirname, 'detectMeetings.ps1');
             const command = `powershell -NoProfile -ExecutionPolicy Bypass -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; & '${scriptPath}'"`;
 
             exec(command, (error, stdout, stderr) => {
-                if (error) {
-                    console.error('Detection script error:', error);
-                    return;
-                }
+                if (error) return;
 
                 try {
-                    // Extract the JSON part from the output (handles cases with profile/shell errors)
                     const jsonMatch = stdout.match(/(\[[\s\S]*\]|"(?:\\.|[^"\\])*")/);
                     if (!jsonMatch) {
                         if (mainWindow && !mainWindow.isDestroyed()) {
@@ -313,15 +350,8 @@ function startDetectionLoop() {
                     } else if (mainWindow && !mainWindow.isDestroyed()) {
                         mainWindow.webContents.send('no-meeting-detected');
                     }
-                } catch (parseError) {
-                    console.error('Failed to parse detection output:', stdout);
-                }
+                } catch (parseError) {}
             });
-        } catch (error) {
-            console.error('Detection error:', error);
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('no-meeting-detected');
-            }
-        }
-    }, 5000); // Check every 5 seconds (increased from 3s for performance)
+        } catch (error) {}
+    }, 5000);
 }

@@ -18,6 +18,7 @@ const libraryBtn = document.getElementById('libraryBtn');
 const libraryPanel = document.getElementById('libraryPanel');
 const closeLibraryBtn = document.getElementById('closeLibraryBtn');
 const libraryContent = document.getElementById('libraryContent');
+const openFolderBtn = document.getElementById('openFolderBtn');
 
 let mediaRecorder;
 let recordedChunks = [];
@@ -29,6 +30,8 @@ let currentMeetingName = "";
 let config = {};
 let activeTranscriptions = 0;
 let inProgressTranscriptions = new Set();
+let queuedTranscriptions = new Set();
+let lastStoppedMeetingName = "";
 
 // Initialize
 async function init() {
@@ -43,7 +46,7 @@ async function init() {
     });
 
     stopBtn.addEventListener('click', () => {
-        stopRecording();
+        stopRecording(true);
     });
 
     startBtn.addEventListener('click', () => {
@@ -58,13 +61,27 @@ async function init() {
         libraryPanel.classList.remove('active');
     });
 
+    openFolderBtn.addEventListener('click', () => {
+        window.electronAPI.openOutputDirectory();
+    });
+
     window.electronAPI.onMeetingDetected(async (titles) => {
+        // Se a reunião que paramos manualmente não está mais na lista, limpamos o bloqueio
+        if (lastStoppedMeetingName && !titles.includes(lastStoppedMeetingName)) {
+            lastStoppedMeetingName = "";
+        }
+
         if (!isRecording) {
-            // Pick the most likely meeting window (contains 'Reuni' or 'Meeting')
-            const bestMatch = titles.find(t => t.includes('Reuni') || t.includes('Meeting')) || titles[0];
-            handleMeetingDetected(bestMatch);
+            // Filtra reuniões que não foram paradas manualmente
+            const availableMeetings = titles.filter(t => t !== lastStoppedMeetingName);
+            
+            if (availableMeetings.length > 0) {
+                // Pega a melhor correspondência entre as disponíveis
+                const bestMatch = availableMeetings.find(t => t.includes('Reuni') || t.includes('Meeting')) || availableMeetings[0];
+                handleMeetingDetected(bestMatch);
+            }
         } else if (!isManualRecording) {
-            // If recording and NOT manual, check if the CURRENT meeting window is still in the list
+            // Se gravando e NÃO manual, verifica se a reunião ATUAL ainda existe
             const stillExists = titles.some(t => t === currentMeetingName);
             if (!stillExists) {
                 console.log("Janela da reunião fechada. Finalizando gravação automática.");
@@ -74,6 +91,7 @@ async function init() {
     });
 
     window.electronAPI.onNoMeetingDetected(() => {
+        lastStoppedMeetingName = "";
         if (isRecording && !isManualRecording) {
             stopRecording();
         }
@@ -88,21 +106,30 @@ async function init() {
     });
 
     window.electronAPI.onTranscriptionStatus((data) => {
-        if (data.status === 'started') {
-            activeTranscriptions++;
+        if (data.status === 'queued') {
+            queuedTranscriptions.add(data.fullPath);
+            updateBackgroundTasksUI();
+            addTranscriptionItem(data.file, data.fullPath, 'queued');
+        } else if (data.status === 'started') {
+            queuedTranscriptions.delete(data.fullPath);
             inProgressTranscriptions.add(data.fullPath);
             updateBackgroundTasksUI();
-            addTranscriptionItem(data.file, data.fullPath);
+            
+            // If already exists (from queued), update it, otherwise add it
+            if (document.getElementById(`trans-${data.file.replace(/[^a-z0-9]/gi, '_')}`)) {
+                updateTranscriptionItem(data.file, 'started');
+            } else {
+                addTranscriptionItem(data.file, data.fullPath, 'started');
+            }
             
             statusLabel.textContent = "Transcrevendo...";
             statusDot.classList.add('processing');
         } else if (data.status === 'finished') {
-            activeTranscriptions = Math.max(0, activeTranscriptions - 1);
             inProgressTranscriptions.delete(data.fullPath);
             updateBackgroundTasksUI();
             updateTranscriptionItem(data.file, 'finished');
             
-            if (activeTranscriptions === 0) {
+            if (inProgressTranscriptions.size === 0) {
                 statusLabel.textContent = "Transcrição Concluída!";
                 statusDot.classList.remove('processing');
                 setTimeout(() => {
@@ -110,12 +137,12 @@ async function init() {
                 }, 4000);
             }
         } else if (data.status === 'error') {
-            activeTranscriptions = Math.max(0, activeTranscriptions - 1);
             inProgressTranscriptions.delete(data.fullPath);
+            queuedTranscriptions.delete(data.fullPath);
             updateBackgroundTasksUI();
             updateTranscriptionItem(data.file, 'error');
             
-            if (activeTranscriptions === 0) {
+            if (inProgressTranscriptions.size === 0) {
                 statusLabel.textContent = "Erro na Transcrição";
                 statusDot.classList.remove('processing');
                 setTimeout(() => {
@@ -123,12 +150,12 @@ async function init() {
                 }, 6000);
             }
         } else if (data.status === 'canceled') {
-            activeTranscriptions = Math.max(0, activeTranscriptions - 1);
             inProgressTranscriptions.delete(data.fullPath);
+            queuedTranscriptions.delete(data.fullPath);
             updateBackgroundTasksUI();
             updateTranscriptionItem(data.file, 'canceled');
             
-            if (activeTranscriptions === 0) {
+            if (inProgressTranscriptions.size === 0) {
                 statusLabel.textContent = "Transcrição Cancelada";
                 statusDot.classList.remove('processing');
                 setTimeout(() => {
@@ -140,28 +167,35 @@ async function init() {
 }
 
 function updateBackgroundTasksUI() {
-    if (activeTranscriptions > 0) {
+    const total = inProgressTranscriptions.size + queuedTranscriptions.size;
+    if (total > 0) {
         backgroundTasks.classList.remove('hidden');
-        const text = activeTranscriptions > 1 ? 'Transcrições' : 'Transcrição';
-        tasksCount.textContent = `${activeTranscriptions} ${text} em andamento`;
+        const text = total > 1 ? 'Tarefas' : 'Tarefa';
+        const detail = inProgressTranscriptions.size > 0 ? `(${inProgressTranscriptions.size} ativa)` : '(na fila)';
+        tasksCount.textContent = `${total} ${text} de transcrição ${detail}`;
     } else {
         backgroundTasks.classList.add('hidden');
     }
 }
 
-function addTranscriptionItem(fileName, fullPath) {
+function addTranscriptionItem(fileName, fullPath, status = 'started') {
     const id = `trans-${fileName.replace(/[^a-z0-9]/gi, '_')}`;
     if (document.getElementById(id)) return;
 
+    const isQueued = status === 'queued';
     const item = document.createElement('div');
-    item.className = 'transcription-item';
+    item.className = `transcription-item ${isQueued ? 'queued' : ''}`;
     item.id = id;
     item.innerHTML = `
         <div class="item-icon">
-            <div class="mini-spinner-anim">
-                <div class="mini-bounce1"></div>
-                <div class="mini-bounce2"></div>
-            </div>
+            ${isQueued ? `
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            ` : `
+                <div class="mini-spinner-anim">
+                    <div class="mini-bounce1"></div>
+                    <div class="mini-bounce2"></div>
+                </div>
+            `}
         </div>
         <div class="item-details">
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -170,7 +204,7 @@ function addTranscriptionItem(fileName, fullPath) {
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
-            <p class="status-text">Processando transcrição...</p>
+            <p class="status-text">${isQueued ? 'Aguardando na fila...' : 'Processando transcrição...'}</p>
             <div class="progress-mini">
                 <div class="progress-mini-bar"></div>
             </div>
@@ -195,6 +229,19 @@ function updateTranscriptionItem(fileName, status) {
 
     const statusText = item.querySelector('.status-text');
     const iconContainer = item.querySelector('.item-icon');
+    
+    if (status === 'started') {
+        item.classList.remove('queued');
+        statusText.textContent = "Processando transcrição...";
+        iconContainer.innerHTML = `
+            <div class="mini-spinner-anim">
+                <div class="mini-bounce1"></div>
+                <div class="mini-bounce2"></div>
+            </div>
+        `;
+        return;
+    }
+
     const cancelBtn = item.querySelector('.btn-cancel');
     if (cancelBtn) cancelBtn.remove(); // Remove cancel button if process ends
 
@@ -396,8 +443,12 @@ async function startRecording(sourceId) {
     }
 }
 
-function stopRecording() {
+function stopRecording(isManual = false) {
     if (mediaRecorder && isRecording) {
+        if (isManual) {
+            lastStoppedMeetingName = currentMeetingName;
+        }
+        
         mediaRecorder.stop();
         isRecording = false;
         
