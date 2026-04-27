@@ -14,6 +14,10 @@ const startBtn = document.getElementById('startBtn');
 const transcriptionContainer = document.getElementById('transcriptionContainer');
 const backgroundTasks = document.getElementById('backgroundTasks');
 const tasksCount = document.getElementById('tasksCount');
+const libraryBtn = document.getElementById('libraryBtn');
+const libraryPanel = document.getElementById('libraryPanel');
+const closeLibraryBtn = document.getElementById('closeLibraryBtn');
+const libraryContent = document.getElementById('libraryContent');
 
 let mediaRecorder;
 let recordedChunks = [];
@@ -24,6 +28,7 @@ let timerInterval;
 let currentMeetingName = "";
 let config = {};
 let activeTranscriptions = 0;
+let inProgressTranscriptions = new Set();
 
 // Initialize
 async function init() {
@@ -43,6 +48,14 @@ async function init() {
 
     startBtn.addEventListener('click', () => {
         handleManualStart();
+    });
+
+    libraryBtn.addEventListener('click', () => {
+        toggleLibrary();
+    });
+
+    closeLibraryBtn.addEventListener('click', () => {
+        libraryPanel.classList.remove('active');
     });
 
     window.electronAPI.onMeetingDetected(async (titles) => {
@@ -77,6 +90,7 @@ async function init() {
     window.electronAPI.onTranscriptionStatus((data) => {
         if (data.status === 'started') {
             activeTranscriptions++;
+            inProgressTranscriptions.add(data.fullPath);
             updateBackgroundTasksUI();
             addTranscriptionItem(data.file);
             
@@ -84,6 +98,7 @@ async function init() {
             statusDot.classList.add('processing');
         } else if (data.status === 'finished') {
             activeTranscriptions = Math.max(0, activeTranscriptions - 1);
+            inProgressTranscriptions.delete(data.fullPath);
             updateBackgroundTasksUI();
             updateTranscriptionItem(data.file, 'finished');
             
@@ -96,6 +111,7 @@ async function init() {
             }
         } else if (data.status === 'error') {
             activeTranscriptions = Math.max(0, activeTranscriptions - 1);
+            inProgressTranscriptions.delete(data.fullPath);
             updateBackgroundTasksUI();
             updateTranscriptionItem(data.file, 'error');
             
@@ -169,6 +185,69 @@ function updateTranscriptionItem(fileName, status) {
         setTimeout(() => item.remove(), 500);
     }, status === 'error' ? 8000 : 5000);
 }
+
+async function toggleLibrary() {
+    libraryPanel.classList.toggle('active');
+    if (libraryPanel.classList.contains('active')) {
+        renderLibrary();
+    }
+}
+
+async function renderLibrary() {
+    libraryContent.innerHTML = '<p style="text-align:center; opacity:0.5;">Buscando arquivos...</p>';
+    const videos = await window.electronAPI.getLibraryVideos();
+    
+    if (videos.length === 0) {
+        libraryContent.innerHTML = '<p style="text-align:center; opacity:0.5;">Nenhuma gravação encontrada.</p>';
+        return;
+    }
+
+    libraryContent.innerHTML = '';
+    videos.forEach(video => {
+        const item = document.createElement('div');
+        item.className = 'library-item';
+        
+        const dateStr = new Date(video.date).toLocaleString('pt-BR', {
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+
+        const isProcessing = inProgressTranscriptions.has(video.path);
+        const statusClass = video.transcribed ? 'badge-success' : (isProcessing ? 'badge-pending' : 'badge-pending');
+        const statusText = video.transcribed ? 'Transcrito' : (isProcessing ? 'Transcrevendo...' : 'Pendente');
+
+        item.innerHTML = `
+            <div class="lib-item-info">
+                <h4>${video.name}</h4>
+                <span>${dateStr}</span>
+            </div>
+            <div class="lib-item-actions">
+                <span class="badge ${statusClass}">
+                    ${statusText}
+                </span>
+                <button class="btn-small ${video.transcribed || isProcessing ? 'hidden' : ''}" 
+                        onclick="requestManualTranscription('${video.path.replace(/\\/g, '\\\\')}')">
+                    Transcrever
+                </button>
+            </div>
+        `;
+        libraryContent.appendChild(item);
+    });
+}
+
+async function requestManualTranscription(filePath) {
+    inProgressTranscriptions.add(filePath); // Add immediately to UI state
+    const result = await window.electronAPI.requestTranscription(filePath);
+    if (result.success) {
+        renderLibrary(); // Re-render to update the button state immediately
+    } else {
+        inProgressTranscriptions.delete(filePath);
+        alert("Erro ao solicitar transcrição: " + result.error);
+    }
+}
+
+// Attach to window so onclick works
+window.requestManualTranscription = requestManualTranscription;
 
 async function handleManualStart() {
     if (!config.outputDirectory) {

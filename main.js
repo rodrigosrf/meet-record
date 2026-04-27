@@ -98,6 +98,58 @@ ipcMain.on('open-settings', () => {
     createSettingsWindow();
 });
 
+ipcMain.handle('get-library-videos', async () => {
+    const outputDir = store.get('outputDirectory');
+    if (!outputDir || !fs.existsSync(outputDir)) return [];
+
+    const videos = [];
+    
+    function scanDir(currentPath) {
+        const files = fs.readdirSync(currentPath);
+        
+        files.forEach(file => {
+            const fullPath = path.join(currentPath, file);
+            const stat = fs.statSync(fullPath);
+            
+            if (stat.isDirectory()) {
+                scanDir(fullPath);
+            } else if (file.endsWith('.webm')) {
+                const baseName = path.parse(file).name;
+                const dir = path.dirname(fullPath);
+                
+                // Check if any transcription files exist (.txt, .vtt, .srt, .json, .tsv)
+                const hasTranscription = fs.readdirSync(dir).some(f => 
+                    f.startsWith(baseName) && (f.endsWith('.txt') || f.endsWith('.srt'))
+                );
+                
+                videos.push({
+                    name: file,
+                    path: fullPath,
+                    date: stat.birthtime,
+                    transcribed: hasTranscription
+                });
+            }
+        });
+    }
+
+    try {
+        scanDir(outputDir);
+        // Sort by date descending
+        return videos.sort((a, b) => b.date - a.date);
+    } catch (err) {
+        console.error("Error scanning library:", err);
+        return [];
+    }
+});
+
+ipcMain.handle('request-transcription', async (event, filePath) => {
+    if (fs.existsSync(filePath)) {
+        runTranscription(filePath);
+        return { success: true };
+    }
+    return { success: false, error: 'File not found' };
+});
+
 ipcMain.handle('save-file', async (event, { buffer, fileName }) => {
     const outputDir = store.get('outputDirectory');
     if (!outputDir) return { success: false, error: 'No output directory' };
@@ -132,7 +184,11 @@ ipcMain.handle('save-file', async (event, { buffer, fileName }) => {
 function runTranscription(filePath) {
     console.log(`Starting transcription for: ${filePath}`);
     if (mainWindow) {
-        mainWindow.webContents.send('transcription-status', { status: 'started', file: path.basename(filePath) });
+        mainWindow.webContents.send('transcription-status', { 
+            status: 'started', 
+            file: path.basename(filePath),
+            fullPath: filePath 
+        });
     }
 
     // whisper "path" --model medium --language Portuguese
@@ -145,7 +201,8 @@ function runTranscription(filePath) {
                 mainWindow.webContents.send('transcription-status', { 
                     status: 'error', 
                     message: error.message,
-                    file: path.basename(filePath) 
+                    file: path.basename(filePath),
+                    fullPath: filePath
                 });
             }
             return;
@@ -155,7 +212,8 @@ function runTranscription(filePath) {
         if (mainWindow) {
             mainWindow.webContents.send('transcription-status', { 
                 status: 'finished', 
-                file: path.basename(filePath) 
+                file: path.basename(filePath),
+                fullPath: filePath
             });
         }
     });

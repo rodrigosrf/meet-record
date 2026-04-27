@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onMeetingDetected: (callback) => ipcRenderer.on('meeting-detected', (_event, value) => callback(value)),
     onNoMeetingDetected: (callback) => ipcRenderer.on('no-meeting-detected', (_event) => callback()),
     saveFile: (data) => ipcRenderer.invoke('save-file', data),
-    onConfigUpdated: (callback) => ipcRenderer.on('config-updated', (_event, value) => callback(value)),
-    onTranscriptionStatus: (callback) => ipcRenderer.on('transcription-status', (_event, value) => callback(value))
+    onConfigUpdated: (callback) => ipcRenderer.on('config-updated', (event, config) => callback(config)),
+    onTranscriptionStatus: (callback) => ipcRenderer.on('transcription-status', (event, data) => callback(data)),
+    getLibraryVideos: () => ipcRenderer.invoke('get-library-videos'),
+    requestTranscription: (filePath) => ipcRenderer.invoke('request-transcription', filePath)
 });
