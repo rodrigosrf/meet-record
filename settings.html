@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configurações</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body style="background-color: #1e293b;">
+    <div class="settings-container">
+        <header style="margin-bottom: 1rem;">
+            <h2>Configurações</h2>
+        </header>
+
+        <div class="setting-group">
+            <h3>Diretório de Gravação</h3>
+            <div class="path-input-group">
+                <div class="path-display" id="currentPath">Carregando...</div>
+                <button class="btn-primary" id="changePathBtn">Alterar</button>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--text-secondary);">As gravações serão salvas automaticamente neste diretório.</p>
+        </div>
+
+        <div style="margin-top: auto; text-align: right;">
+            <button class="icon-btn" style="width: 100%;" onclick="window.close()">Fechar</button>
+        </div>
+    </div>
+    <script src="settings.js"></script>
+</body>
+</html>

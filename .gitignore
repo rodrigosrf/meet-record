@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Recordings and large media files
+*.webm
+04-*/
+
+# Temporary/Debug files
+scratch/
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
