@@ -42,6 +42,10 @@
                 <button id="stopBtn" class="btn-danger hidden" style="margin-top: 2rem; width: 100%;">Finalizar Gravação</button>
             </div>
 
+            <div class="transcription-container" id="transcriptionContainer">
+                <!-- Transcription items will be added here dynamically -->
+            </div>
+
             <div class="config-alert" id="configAlert">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
                 <span>Defina o diretório de salvamento nas configurações.</span>
@@ -49,9 +53,15 @@
         </main>
 
         <footer>
-            <div class="path-info">
-                <label>Salvando em:</label>
-                <span id="savePath">Não configurado</span>
+            <div class="footer-content">
+                <div class="path-info">
+                    <label>Salvando em:</label>
+                    <span id="savePath">Não configurado</span>
+                </div>
+                <div class="background-tasks hidden" id="backgroundTasks">
+                    <div class="mini-spinner"></div>
+                    <span id="tasksCount">1 Transcrição em andamento</span>
+                </div>
             </div>
         </footer>
     </div>

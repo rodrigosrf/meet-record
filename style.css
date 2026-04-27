@@ -116,6 +116,8 @@ main {
     max-width: 500px;
     text-align: center;
     transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
 }
 
 .status-card.recording {
@@ -200,14 +202,49 @@ main {
 
 footer {
     margin-top: auto;
-    padding-top: 2rem;
+    padding-top: 1.5rem;
     border-top: 1px solid var(--glass-border);
+}
+
+.footer-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .path-info {
     display: flex;
     flex-direction: column;
     gap: 4px;
+}
+
+.background-tasks {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(56, 189, 248, 0.1);
+    padding: 8px 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(56, 189, 248, 0.2);
+}
+
+.background-tasks span {
+    font-size: 0.75rem;
+    color: var(--accent-color);
+    font-weight: 500;
+}
+
+.mini-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(56, 189, 248, 0.3);
+    border-top-color: var(--accent-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
 }
 
 .path-info label {
@@ -294,3 +331,127 @@ footer {
 .hidden {
     display: none !important;
 }
+
+/* Transcription Panel Styles */
+.transcription-container {
+    width: 100%;
+    max-width: 500px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 1rem;
+}
+
+.transcription-item {
+    background: var(--card-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    animation: slideUp 0.4s ease forwards;
+    transition: all 0.3s ease;
+}
+
+.transcription-item.finished {
+    border-color: var(--success);
+    background: rgba(34, 197, 94, 0.05);
+}
+
+.transcription-item.error {
+    border-color: var(--danger);
+    background: rgba(239, 68, 68, 0.05);
+}
+
+.transcription-item .item-icon {
+    flex-shrink: 0;
+}
+
+.transcription-item .item-details {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.transcription-item .item-details h4 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.transcription-item .item-details p {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.transcription-item .progress-mini {
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 4px;
+}
+
+.transcription-item .progress-mini-bar {
+    width: 30%;
+    height: 100%;
+    background: var(--accent-color);
+    border-radius: 2px;
+    animation: progress-ind 2s infinite ease-in-out;
+}
+
+.transcription-item.finished .progress-mini-bar {
+    width: 100%;
+    background: var(--success);
+    animation: none;
+}
+
+.transcription-item.error .progress-mini-bar {
+    width: 100%;
+    background: var(--danger);
+    animation: none;
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeOut {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(0.95); }
+}
+
+/* Reusing double bounce for mini version */
+.mini-spinner-anim {
+    width: 24px;
+    height: 24px;
+    position: relative;
+}
+
+.mini-bounce1, .mini-bounce2 {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background-color: var(--accent-color);
+    opacity: 0.6;
+    position: absolute;
+    top: 0;
+    left: 0;
+    animation: sk-bounce 2.0s infinite ease-in-out;
+}
+
+.mini-bounce2 {
+    animation-delay: -1.0s;
+    background-color: #f59e0b;
+}
+
+

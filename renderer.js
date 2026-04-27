@@ -10,6 +10,11 @@ const configAlert = document.getElementById('configAlert');
 const stopBtn = document.getElementById('stopBtn');
 const startBtn = document.getElementById('startBtn');
 
+// New Transcription UI Elements
+const transcriptionContainer = document.getElementById('transcriptionContainer');
+const backgroundTasks = document.getElementById('backgroundTasks');
+const tasksCount = document.getElementById('tasksCount');
+
 let mediaRecorder;
 let recordedChunks = [];
 let isRecording = false;
@@ -18,6 +23,7 @@ let startTime;
 let timerInterval;
 let currentMeetingName = "";
 let config = {};
+let activeTranscriptions = 0;
 
 // Initialize
 async function init() {
@@ -70,20 +76,98 @@ async function init() {
 
     window.electronAPI.onTranscriptionStatus((data) => {
         if (data.status === 'started') {
-            statusLabel.textContent = `Transcrevendo: ${data.file}...`;
-            statusDot.classList.add('processing'); // We can add a CSS class for processing state
+            activeTranscriptions++;
+            updateBackgroundTasksUI();
+            addTranscriptionItem(data.file);
+            
+            statusLabel.textContent = "Transcrevendo...";
+            statusDot.classList.add('processing');
         } else if (data.status === 'finished') {
-            statusLabel.textContent = "Transcrição Concluída!";
-            statusDot.classList.remove('processing');
-            setTimeout(() => {
-                if (!isRecording) statusLabel.textContent = "Aguardando Reunião...";
-            }, 5000);
+            activeTranscriptions = Math.max(0, activeTranscriptions - 1);
+            updateBackgroundTasksUI();
+            updateTranscriptionItem(data.file, 'finished');
+            
+            if (activeTranscriptions === 0) {
+                statusLabel.textContent = "Transcrição Concluída!";
+                statusDot.classList.remove('processing');
+                setTimeout(() => {
+                    if (!isRecording) statusLabel.textContent = "Aguardando Reunião...";
+                }, 4000);
+            }
         } else if (data.status === 'error') {
-            statusLabel.textContent = "Erro na Transcrição";
-            statusDot.classList.remove('processing');
-            console.error("Whisper Error:", data.message);
+            activeTranscriptions = Math.max(0, activeTranscriptions - 1);
+            updateBackgroundTasksUI();
+            updateTranscriptionItem(data.file, 'error');
+            
+            if (activeTranscriptions === 0) {
+                statusLabel.textContent = "Erro na Transcrição";
+                statusDot.classList.remove('processing');
+                setTimeout(() => {
+                    if (!isRecording) statusLabel.textContent = "Aguardando Reunião...";
+                }, 6000);
+            }
         }
     });
+}
+
+function updateBackgroundTasksUI() {
+    if (activeTranscriptions > 0) {
+        backgroundTasks.classList.remove('hidden');
+        const text = activeTranscriptions > 1 ? 'Transcrições' : 'Transcrição';
+        tasksCount.textContent = `${activeTranscriptions} ${text} em andamento`;
+    } else {
+        backgroundTasks.classList.add('hidden');
+    }
+}
+
+function addTranscriptionItem(fileName) {
+    const id = `trans-${fileName.replace(/[^a-z0-9]/gi, '_')}`;
+    if (document.getElementById(id)) return;
+
+    const item = document.createElement('div');
+    item.className = 'transcription-item';
+    item.id = id;
+    item.innerHTML = `
+        <div class="item-icon">
+            <div class="mini-spinner-anim">
+                <div class="mini-bounce1"></div>
+                <div class="mini-bounce2"></div>
+            </div>
+        </div>
+        <div class="item-details">
+            <h4>${fileName}</h4>
+            <p class="status-text">Processando transcrição...</p>
+            <div class="progress-mini">
+                <div class="progress-mini-bar"></div>
+            </div>
+        </div>
+    `;
+    transcriptionContainer.appendChild(item);
+}
+
+function updateTranscriptionItem(fileName, status) {
+    const id = `trans-${fileName.replace(/[^a-z0-9]/gi, '_')}`;
+    const item = document.getElementById(id);
+    if (!item) return;
+
+    const statusText = item.querySelector('.status-text');
+    const iconContainer = item.querySelector('.item-icon');
+
+    if (status === 'finished') {
+        item.classList.add('finished');
+        statusText.textContent = "Transcrição concluída com sucesso!";
+        iconContainer.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+    } else if (status === 'error') {
+        item.classList.add('error');
+        statusText.textContent = "Erro ao transcrever arquivo.";
+        iconContainer.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`;
+    }
+
+    // Remove item after a delay
+    setTimeout(() => {
+        item.style.animation = 'fadeOut 0.5s ease forwards';
+        setTimeout(() => item.remove(), 500);
+    }, status === 'error' ? 8000 : 5000);
 }
 
 async function handleManualStart() {

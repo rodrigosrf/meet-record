@@ -188,7 +188,7 @@ function startDetectionLoop() {
 
             // If we have potential windows, use the robust PowerShell check
             const scriptPath = path.join(__dirname, 'detectMeetings.ps1');
-            const command = `powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}"`;
+            const command = `powershell -NoProfile -ExecutionPolicy Bypass -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; & '${scriptPath}'"`;
 
             exec(command, (error, stdout, stderr) => {
                 if (error) {
