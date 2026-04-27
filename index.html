@@ -25,14 +25,27 @@
         </header>
 
         <div class="library-panel" id="libraryPanel">
-            <div class="library-header">
-                <h2>Biblioteca de Gravações</h2>
+            <header class="library-header">
+                <h2>Biblioteca</h2>
                 <button id="closeLibraryBtn" class="icon-btn">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
+            </header>
+
+            <div class="library-filters">
+                <div class="search-box">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="text" id="librarySearch" placeholder="Buscar por nome...">
+                </div>
+                <div class="filter-group">
+                    <button class="filter-chip active" data-filter="all">Todas</button>
+                    <button class="filter-chip" data-filter="transcribed">Transcritos</button>
+                    <button class="filter-chip" data-filter="summarized">Resumidos</button>
+                </div>
             </div>
+
             <div class="library-content" id="libraryContent">
-                <!-- Library items will be added here -->
+                <!-- Items will be grouped by date -->
             </div>
         </div>
 
@@ -88,6 +101,22 @@
             </div>
         </footer>
     </div>
+
+    <!-- Summary Modal -->
+    <div id="summaryModal" class="modal-overlay">
+        <div class="modal-container">
+            <header class="modal-header">
+                <h2 id="summaryTitle">Resumo da Reunião</h2>
+                <button class="btn-close-modal" id="closeSummaryBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </header>
+            <div class="modal-body" id="summaryContent">
+                <!-- Content will be injected here -->
+            </div>
+        </div>
+    </div>
+
     <script src="renderer.js"></script>
 </body>
 </html>

@@ -41,9 +41,9 @@ function createSettingsWindow() {
     }
 
     settingsWindow = new BrowserWindow({
-        width: 500,
-        height: 400,
-        title: 'Settings',
+        width: 850,
+        height: 600,
+        title: 'Configurações',
         parent: mainWindow,
         modal: true,
         webPreferences: {
@@ -93,7 +93,14 @@ ipcMain.handle('select-directory', async () => {
 ipcMain.handle('get-config', () => {
     return {
         outputDirectory: store.get('outputDirectory'),
-        autoTranscribe: store.get('autoTranscribe', true)
+        autoTranscribe: store.get('autoTranscribe', true),
+        aiConfig: store.get('aiConfig', {
+            provider: 'openrouter',
+            model: 'openai/gpt-4o',
+            apiKey: '',
+            systemPrompt: 'Você é um assistente útil que resume reuniões de forma executiva, destacando pontos principais, decisões tomadas e próximos passos.',
+            autoSummarize: false
+        })
     };
 });
 
@@ -104,6 +111,10 @@ ipcMain.handle('update-config', (event, newConfig) => {
     }
     if (newConfig.autoTranscribe !== undefined) {
         store.set('autoTranscribe', newConfig.autoTranscribe);
+    }
+    if (newConfig.aiConfig !== undefined) {
+        const currentAiConfig = store.get('aiConfig') || {};
+        store.set('aiConfig', { ...currentAiConfig, ...newConfig.aiConfig });
     }
     return { success: true };
 });
@@ -152,6 +163,14 @@ ipcMain.handle('get-library-videos', async () => {
 
     try {
         scanDir(outputDir);
+        
+        // Add summary status
+        videos.forEach(v => {
+            const baseName = path.parse(v.path).name;
+            const dir = path.dirname(v.path);
+            v.summarized = fs.existsSync(path.join(dir, `${baseName}_summary.md`));
+        });
+
         return videos.sort((a, b) => b.date - a.date);
     } catch (err) {
         console.error("Error scanning library:", err);
@@ -204,6 +223,83 @@ ipcMain.handle('cancel-transcription', async (event, filePath) => {
         return { success: true };
     }
     return { success: false, error: 'Process not found' };
+});
+
+async function generateSummaryAction(filePath) {
+    const aiConfig = store.get('aiConfig');
+    if (!aiConfig || !aiConfig.apiKey) {
+        return { success: false, error: 'Chave de API não configurada.' };
+    }
+
+    const baseName = path.parse(filePath).name;
+    const dir = path.dirname(filePath);
+    const txtPath = path.join(dir, `${baseName}.txt`);
+
+    if (!fs.existsSync(txtPath)) {
+        return { success: false, error: 'Arquivo de transcrição não encontrado. Transcreva o vídeo primeiro.' };
+    }
+
+    try {
+        const transcription = fs.readFileSync(txtPath, 'utf8');
+        
+        let apiUrl = '';
+        let headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${aiConfig.apiKey}`
+        };
+
+        if (aiConfig.provider === 'openrouter') {
+            apiUrl = 'https://openrouter.ai/api/v1/chat/completions';
+            headers['HTTP-Referer'] = 'https://github.com/rodrigosrf/meet-record';
+            headers['X-Title'] = 'Meet Recorder';
+        } else if (aiConfig.provider === 'openai') {
+            apiUrl = 'https://api.openai.com/v1/chat/completions';
+        } else if (aiConfig.provider === 'gemini') {
+            apiUrl = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+        }
+
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({
+                model: aiConfig.model || 'openai/gpt-4o',
+                messages: [
+                    { role: 'system', content: aiConfig.systemPrompt },
+                    { role: 'user', content: `Por favor, resuma a seguinte transcrição de reunião:\n\n${transcription}` }
+                ]
+            })
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            throw new Error(data.error.message || JSON.stringify(data.error));
+        }
+
+        const summary = data.choices[0].message.content;
+        const summaryPath = path.join(dir, `${baseName}_summary.md`);
+        fs.writeFileSync(summaryPath, summary);
+
+        return { success: true, summary, path: summaryPath };
+    } catch (error) {
+        console.error('Error generating summary:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+ipcMain.handle('generate-summary', async (event, filePath) => {
+    return await generateSummaryAction(filePath);
+});
+
+ipcMain.handle('get-summary', async (event, videoPath) => {
+    const baseName = path.parse(videoPath).name;
+    const dir = path.dirname(videoPath);
+    const summaryPath = path.join(dir, `${baseName}_summary.md`);
+
+    if (fs.existsSync(summaryPath)) {
+        const content = fs.readFileSync(summaryPath, 'utf8');
+        return { success: true, content };
+    }
+    return { success: false, error: 'Resumo não encontrado.' };
 });
 
 ipcMain.handle('save-file', async (event, { buffer, fileName }) => {
@@ -298,11 +394,32 @@ function runTranscription(filePath) {
                 fullPath: filePath
             });
         }
+
+        // Check for auto-summarize
+        const aiConfig = store.get('aiConfig');
+        if (aiConfig && aiConfig.autoSummarize && aiConfig.apiKey) {
+            console.log("Auto-summarizing transcription for:", filePath);
+            ipcMain.emit('generate-summary-internal', filePath);
+        }
+
         processNextInQueue();
     });
 
     activeProcesses.set(filePath, childProcess);
 }
+
+// Internal summary generation to avoid IPC overhead when calling from main
+ipcMain.on('generate-summary-internal', async (filePath) => {
+    try {
+        await generateSummaryAction(filePath);
+        // Refresh library in renderer if possible
+        if (mainWindow) {
+            mainWindow.webContents.send('config-updated', {}); // Trigger a refresh indirectly or use a specific event
+        }
+    } catch (e) {
+        console.error("Auto-summary failed:", e);
+    }
+});
 
 function startDetectionLoop() {
     detectionInterval = setInterval(async () => {

@@ -19,6 +19,10 @@ const libraryPanel = document.getElementById('libraryPanel');
 const closeLibraryBtn = document.getElementById('closeLibraryBtn');
 const libraryContent = document.getElementById('libraryContent');
 const openFolderBtn = document.getElementById('openFolderBtn');
+const summaryModal = document.getElementById('summaryModal');
+const closeSummaryBtn = document.getElementById('closeSummaryBtn');
+const summaryContent = document.getElementById('summaryContent');
+const summaryTitle = document.getElementById('summaryTitle');
 
 let mediaRecorder;
 let recordedChunks = [];
@@ -32,6 +36,9 @@ let activeTranscriptions = 0;
 let inProgressTranscriptions = new Set();
 let queuedTranscriptions = new Set();
 let lastStoppedMeetingName = "";
+let allVideos = [];
+let currentFilter = 'all';
+let searchQuery = '';
 
 // Initialize
 async function init() {
@@ -63,6 +70,35 @@ async function init() {
 
     openFolderBtn.addEventListener('click', () => {
         window.electronAPI.openOutputDirectory();
+    });
+
+    closeSummaryBtn.addEventListener('click', () => {
+        summaryModal.classList.remove('active');
+    });
+
+    // Close modal on click outside
+    summaryModal.addEventListener('click', (e) => {
+        if (e.target === summaryModal) {
+            summaryModal.classList.remove('active');
+        }
+    });
+
+    // Library Filters & Search
+    const librarySearch = document.getElementById('librarySearch');
+    const filterChips = document.querySelectorAll('.filter-chip');
+
+    librarySearch.addEventListener('input', (e) => {
+        searchQuery = e.target.value.toLowerCase();
+        renderLibrary(true); // Don't fetch from backend
+    });
+
+    filterChips.forEach(chip => {
+        chip.addEventListener('click', () => {
+            filterChips.forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            currentFilter = chip.getAttribute('data-filter');
+            renderLibrary(true);
+        });
     });
 
     window.electronAPI.onMeetingDetected(async (titles) => {
@@ -273,47 +309,181 @@ async function toggleLibrary() {
     }
 }
 
-async function renderLibrary() {
-    libraryContent.innerHTML = '<p style="text-align:center; opacity:0.5;">Buscando arquivos...</p>';
-    const videos = await window.electronAPI.getLibraryVideos();
+async function renderLibrary(skipFetch = false) {
+    if (!skipFetch) {
+        libraryContent.innerHTML = '<p style="text-align:center; opacity:0.5;">Buscando arquivos...</p>';
+        allVideos = await window.electronAPI.getLibraryVideos();
+    }
     
-    if (videos.length === 0) {
+    if (allVideos.length === 0) {
         libraryContent.innerHTML = '<p style="text-align:center; opacity:0.5;">Nenhuma gravação encontrada.</p>';
         return;
     }
 
+    // Apply Search and Filters
+    let filteredVideos = allVideos.filter(video => {
+        const matchesSearch = video.name.toLowerCase().includes(searchQuery);
+        let matchesFilter = true;
+        if (currentFilter === 'transcribed') matchesFilter = video.transcribed;
+        if (currentFilter === 'summarized') matchesFilter = video.summarized;
+        return matchesSearch && matchesFilter;
+    });
+
+    if (filteredVideos.length === 0) {
+        libraryContent.innerHTML = '<p style="text-align:center; opacity:0.5;">Nenhum resultado encontrado.</p>';
+        return;
+    }
+
+    // Grouping Logic
+    const groups = groupVideosByDate(filteredVideos);
+    
     libraryContent.innerHTML = '';
-    videos.forEach(video => {
-        const item = document.createElement('div');
-        item.className = 'library-item';
+    
+    Object.keys(groups).forEach(dateLabel => {
+        const groupHeader = document.createElement('div');
+        groupHeader.className = 'date-group-header';
+        groupHeader.textContent = dateLabel;
+        libraryContent.appendChild(groupHeader);
+
+        const groupContainer = document.createElement('div');
+        groupContainer.className = 'date-group';
         
-        const dateStr = new Date(video.date).toLocaleString('pt-BR', {
-            day: '2-digit', month: '2-digit', year: 'numeric',
-            hour: '2-digit', minute: '2-digit'
+        groups[dateLabel].forEach(video => {
+            const item = document.createElement('div');
+            item.className = 'library-item';
+            
+            const dateStr = new Date(video.date).toLocaleString('pt-BR', {
+                hour: '2-digit', minute: '2-digit'
+            });
+
+            const isProcessing = inProgressTranscriptions.has(video.path);
+            const statusClass = video.transcribed ? 'badge-success' : (isProcessing ? 'badge-pending' : 'badge-pending');
+            const statusText = video.transcribed ? 'Transcrito' : (isProcessing ? 'Transcrevendo...' : 'Pendente');
+
+            item.innerHTML = `
+                <div class="lib-item-info">
+                    <h4>${video.name}</h4>
+                    <span>${dateStr}</span>
+                </div>
+                <div class="lib-item-actions">
+                    <div style="display:flex; gap: 8px; align-items:center;">
+                        <span class="badge ${statusClass}">
+                            ${statusText}
+                        </span>
+                        ${video.summarized ? `
+                            <span class="badge badge-summary">Resumido</span>
+                        ` : ''}
+                    </div>
+                    <div style="display:flex; gap: 8px;">
+                        <button class="btn-small ${video.transcribed || isProcessing ? 'hidden' : ''}" 
+                                onclick="requestManualTranscription('${video.path.replace(/\\/g, '\\\\')}')">
+                            Transcrever
+                        </button>
+                        ${video.transcribed ? `
+                            <button class="btn-small btn-summary" 
+                                    onclick="handleSummaryAction('${video.path.replace(/\\/g, '\\\\')}', ${video.summarized})">
+                                ${video.summarized ? 'Ver Resumo' : 'Gerar Resumo'}
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+            groupContainer.appendChild(item);
         });
-
-        const isProcessing = inProgressTranscriptions.has(video.path);
-        const statusClass = video.transcribed ? 'badge-success' : (isProcessing ? 'badge-pending' : 'badge-pending');
-        const statusText = video.transcribed ? 'Transcrito' : (isProcessing ? 'Transcrevendo...' : 'Pendente');
-
-        item.innerHTML = `
-            <div class="lib-item-info">
-                <h4>${video.name}</h4>
-                <span>${dateStr}</span>
-            </div>
-            <div class="lib-item-actions">
-                <span class="badge ${statusClass}">
-                    ${statusText}
-                </span>
-                <button class="btn-small ${video.transcribed || isProcessing ? 'hidden' : ''}" 
-                        onclick="requestManualTranscription('${video.path.replace(/\\/g, '\\\\')}')">
-                    Transcrever
-                </button>
-            </div>
-        `;
-        libraryContent.appendChild(item);
+        libraryContent.appendChild(groupContainer);
     });
 }
+
+function groupVideosByDate(videos) {
+    const groups = {};
+    const today = new Date().setHours(0,0,0,0);
+    const yesterday = new Date(today - 86400000).getTime();
+    
+    videos.forEach(video => {
+        const videoDate = new Date(video.date);
+        const videoDay = new Date(video.date).setHours(0,0,0,0);
+        
+        let label = '';
+        if (videoDay === today) label = 'Hoje';
+        else if (videoDay === yesterday) label = 'Ontem';
+        else {
+            label = videoDate.toLocaleDateString('pt-BR', { 
+                day: '2-digit', month: 'long' 
+            });
+        }
+        
+        if (!groups[label]) groups[label] = [];
+        groups[label].push(video);
+    });
+    
+    return groups;
+}
+
+async function handleSummaryAction(videoPath, alreadyHasSummary) {
+    if (alreadyHasSummary) {
+        showSummary(videoPath);
+    } else {
+        requestSummary(videoPath);
+    }
+}
+
+async function requestSummary(videoPath) {
+    statusLabel.textContent = "Gerando Resumo...";
+    statusDot.classList.add('processing');
+    
+    const result = await window.electronAPI.generateSummary(videoPath);
+    
+    statusDot.classList.remove('processing');
+    if (result.success) {
+        statusLabel.textContent = "Resumo Gerado!";
+        setTimeout(() => {
+            if (!isRecording) statusLabel.textContent = "Aguardando Reunião...";
+        }, 3000);
+        renderLibrary();
+        displaySummaryContent(result.summary, videoPath.split(/[\\/]/).pop());
+    } else {
+        statusLabel.textContent = "Erro no Resumo";
+        alert("Erro ao gerar resumo: " + result.error);
+        setTimeout(() => {
+            if (!isRecording) statusLabel.textContent = "Aguardando Reunião...";
+        }, 3000);
+    }
+}
+
+async function showSummary(videoPath) {
+    const result = await window.electronAPI.getSummary(videoPath);
+    if (result.success) {
+        displaySummaryContent(result.content, videoPath.split(/[\\/]/).pop());
+    } else {
+        alert("Erro ao carregar resumo: " + result.error);
+    }
+}
+
+function displaySummaryContent(markdown, fileName) {
+    summaryTitle.textContent = `Resumo: ${fileName}`;
+    
+    // Simple Markdown to HTML converter
+    let html = markdown
+        .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+        .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+        .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+        .replace(/^\* (.*$)/gim, '<li>$1</li>')
+        .replace(/^\- (.*$)/gim, '<li>$1</li>')
+        .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>')
+        .replace(/\*(.*)\*/gim, '<em>$1</em>')
+        .replace(/\n/g, '<br>');
+    
+    // Wrap lists
+    html = html.replace(/(<li>.*<\/li>)/gim, '<ul>$1</ul>');
+    // Fix double UL
+    html = html.replace(/<\/ul><ul>/gim, '');
+
+    summaryContent.innerHTML = html;
+    summaryModal.classList.add('active');
+}
+
+// Attach to window
+window.handleSummaryAction = handleSummaryAction;
 
 async function requestManualTranscription(filePath) {
     inProgressTranscriptions.add(filePath); // Add immediately to UI state

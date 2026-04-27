@@ -14,5 +14,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     requestTranscription: (filePath) => ipcRenderer.invoke('request-transcription', filePath),
     cancelTranscription: (filePath) => ipcRenderer.invoke('cancel-transcription', filePath),
     updateConfig: (config) => ipcRenderer.invoke('update-config', config),
-    openOutputDirectory: () => ipcRenderer.invoke('open-output-directory')
+    openOutputDirectory: () => ipcRenderer.invoke('open-output-directory'),
+    generateSummary: (filePath) => ipcRenderer.invoke('generate-summary', filePath),
+    getSummary: (videoPath) => ipcRenderer.invoke('get-summary', videoPath)
 });
