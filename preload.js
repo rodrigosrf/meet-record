@@ -11,5 +11,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onConfigUpdated: (callback) => ipcRenderer.on('config-updated', (event, config) => callback(config)),
     onTranscriptionStatus: (callback) => ipcRenderer.on('transcription-status', (event, data) => callback(data)),
     getLibraryVideos: () => ipcRenderer.invoke('get-library-videos'),
-    requestTranscription: (filePath) => ipcRenderer.invoke('request-transcription', filePath)
+    requestTranscription: (filePath) => ipcRenderer.invoke('request-transcription', filePath),
+    cancelTranscription: (filePath) => ipcRenderer.invoke('cancel-transcription', filePath)
 });

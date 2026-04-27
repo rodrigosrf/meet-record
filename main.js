@@ -13,6 +13,7 @@ const store = new Store();
 let mainWindow;
 let settingsWindow;
 let detectionInterval;
+const activeProcesses = new Map();
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -150,6 +151,40 @@ ipcMain.handle('request-transcription', async (event, filePath) => {
     return { success: false, error: 'File not found' };
 });
 
+ipcMain.handle('cancel-transcription', async (event, filePath) => {
+    const childProcess = activeProcesses.get(filePath);
+    if (childProcess) {
+        childProcess.kill();
+        activeProcesses.delete(filePath);
+        
+        // Clean up partial files
+        const baseName = path.parse(filePath).name;
+        const dir = path.dirname(filePath);
+        const extensions = ['.txt', '.srt', '.vtt', '.tsv', '.json'];
+        
+        try {
+            const files = fs.readdirSync(dir);
+            files.forEach(file => {
+                if (file.startsWith(baseName) && extensions.some(ext => file.endsWith(ext))) {
+                    fs.unlinkSync(path.join(dir, file));
+                }
+            });
+        } catch (err) {
+            console.error("Error cleaning up canceled transcription files:", err);
+        }
+
+        if (mainWindow) {
+            mainWindow.webContents.send('transcription-status', { 
+                status: 'canceled', 
+                file: path.basename(filePath),
+                fullPath: filePath
+            });
+        }
+        return { success: true };
+    }
+    return { success: false, error: 'Process not found' };
+});
+
 ipcMain.handle('save-file', async (event, { buffer, fileName }) => {
     const outputDir = store.get('outputDirectory');
     if (!outputDir) return { success: false, error: 'No output directory' };
@@ -194,8 +229,12 @@ function runTranscription(filePath) {
     // whisper "path" --model medium --language Portuguese
     const command = `whisper "${filePath}" --model medium --language Portuguese --output_dir "${path.dirname(filePath)}"`;
     
-    exec(command, (error, stdout, stderr) => {
+    const childProcess = exec(command, (error, stdout, stderr) => {
+        activeProcesses.delete(filePath);
+        
         if (error) {
+            if (childProcess.killed) return; // Ignore errors if we killed it intentionally
+            
             console.error(`Transcription error: ${error.message}`);
             if (mainWindow) {
                 mainWindow.webContents.send('transcription-status', { 
@@ -217,6 +256,8 @@ function runTranscription(filePath) {
             });
         }
     });
+
+    activeProcesses.set(filePath, childProcess);
 }
 
 // Detection Logic

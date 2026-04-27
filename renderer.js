@@ -92,7 +92,7 @@ async function init() {
             activeTranscriptions++;
             inProgressTranscriptions.add(data.fullPath);
             updateBackgroundTasksUI();
-            addTranscriptionItem(data.file);
+            addTranscriptionItem(data.file, data.fullPath);
             
             statusLabel.textContent = "Transcrevendo...";
             statusDot.classList.add('processing');
@@ -122,6 +122,19 @@ async function init() {
                     if (!isRecording) statusLabel.textContent = "Aguardando Reunião...";
                 }, 6000);
             }
+        } else if (data.status === 'canceled') {
+            activeTranscriptions = Math.max(0, activeTranscriptions - 1);
+            inProgressTranscriptions.delete(data.fullPath);
+            updateBackgroundTasksUI();
+            updateTranscriptionItem(data.file, 'canceled');
+            
+            if (activeTranscriptions === 0) {
+                statusLabel.textContent = "Transcrição Cancelada";
+                statusDot.classList.remove('processing');
+                setTimeout(() => {
+                    if (!isRecording) statusLabel.textContent = "Aguardando Reunião...";
+                }, 3000);
+            }
         }
     });
 }
@@ -136,7 +149,7 @@ function updateBackgroundTasksUI() {
     }
 }
 
-function addTranscriptionItem(fileName) {
+function addTranscriptionItem(fileName, fullPath) {
     const id = `trans-${fileName.replace(/[^a-z0-9]/gi, '_')}`;
     if (document.getElementById(id)) return;
 
@@ -151,7 +164,12 @@ function addTranscriptionItem(fileName) {
             </div>
         </div>
         <div class="item-details">
-            <h4>${fileName}</h4>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h4>${fileName}</h4>
+                <button class="btn-cancel" onclick="cancelTranscription('${fullPath.replace(/\\/g, '\\\\')}')" title="Cancelar Transcrição">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
             <p class="status-text">Processando transcrição...</p>
             <div class="progress-mini">
                 <div class="progress-mini-bar"></div>
@@ -161,6 +179,15 @@ function addTranscriptionItem(fileName) {
     transcriptionContainer.appendChild(item);
 }
 
+async function cancelTranscription(filePath) {
+    const result = await window.electronAPI.cancelTranscription(filePath);
+    if (!result.success) {
+        console.error("Erro ao cancelar transcrição:", result.error);
+    }
+}
+
+window.cancelTranscription = cancelTranscription;
+
 function updateTranscriptionItem(fileName, status) {
     const id = `trans-${fileName.replace(/[^a-z0-9]/gi, '_')}`;
     const item = document.getElementById(id);
@@ -168,6 +195,8 @@ function updateTranscriptionItem(fileName, status) {
 
     const statusText = item.querySelector('.status-text');
     const iconContainer = item.querySelector('.item-icon');
+    const cancelBtn = item.querySelector('.btn-cancel');
+    if (cancelBtn) cancelBtn.remove(); // Remove cancel button if process ends
 
     if (status === 'finished') {
         item.classList.add('finished');
@@ -177,13 +206,17 @@ function updateTranscriptionItem(fileName, status) {
         item.classList.add('error');
         statusText.textContent = "Erro ao transcrever arquivo.";
         iconContainer.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`;
+    } else if (status === 'canceled') {
+        item.classList.add('error');
+        statusText.textContent = "Transcrição cancelada.";
+        iconContainer.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
     }
 
     // Remove item after a delay
     setTimeout(() => {
         item.style.animation = 'fadeOut 0.5s ease forwards';
         setTimeout(() => item.remove(), 500);
-    }, status === 'error' ? 8000 : 5000);
+    }, status === 'error' || status === 'canceled' ? 8000 : 5000);
 }
 
 async function toggleLibrary() {
