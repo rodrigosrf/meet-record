@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, shell, Tray, Menu, nativeImage } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
@@ -16,6 +16,8 @@ let detectionInterval;
 const activeProcesses = new Map();
 const transcriptionQueue = [];
 let isProcessingQueue = false;
+let tray = null;
+let isQuitting = false;
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -32,6 +34,62 @@ function createWindow() {
     });
 
     mainWindow.loadFile('index.html');
+
+    mainWindow.on('close', (event) => {
+        if (!isQuitting) {
+            event.preventDefault();
+            mainWindow.hide();
+        }
+        return false;
+    });
+}
+
+function createTray() {
+    const iconPath = path.join(__dirname, 'assets', 'icon.png');
+    const icon = nativeImage.createFromPath(iconPath);
+    
+    tray = new Tray(icon.resize({ width: 16, height: 16 }));
+    
+    const contextMenu = Menu.buildFromTemplate([
+        { 
+            label: 'Abrir Meet Record', 
+            click: () => {
+                mainWindow.show();
+            } 
+        },
+        { type: 'separator' },
+        {
+            label: 'Iniciar Gravação Manual',
+            click: () => {
+                mainWindow.webContents.send('start-manual-recording');
+            }
+        },
+        {
+            label: 'Finalizar Gravação',
+            click: () => {
+                mainWindow.webContents.send('stop-recording');
+            }
+        },
+        { type: 'separator' },
+        { 
+            label: 'Sair', 
+            click: () => {
+                isQuitting = true;
+                app.quit();
+            } 
+        }
+    ]);
+
+    tray.setToolTip('Meet Record');
+    tray.setContextMenu(contextMenu);
+
+    tray.on('click', () => {
+        if (mainWindow.isVisible()) {
+            mainWindow.hide();
+        } else {
+            mainWindow.show();
+        }
+    });
 }
 
 function createSettingsWindow() {
@@ -62,11 +120,20 @@ function createSettingsWindow() {
 
 app.whenReady().then(() => {
     createWindow();
+    createTray();
     startDetectionLoop();
 
     app.on('activate', function () {
-        if (BrowserWindow.getAllWindows().length === 0) createWindow();
+        if (BrowserWindow.getAllWindows().length === 0) {
+            createWindow();
+        } else {
+            mainWindow.show();
+        }
     });
+});
+
+app.on('before-quit', () => {
+    isQuitting = true;
 });
 
 app.on('window-all-closed', function () {

@@ -112,6 +112,18 @@ async function init() {
             configAlert.classList.add('hidden');
         }
     });
+
+    window.electronAPI.onStartManualRecording(() => {
+        if (!isRecording) {
+            handleManualStart();
+        }
+    });
+
+    window.electronAPI.onStopRecording(() => {
+        if (isRecording) {
+            stopRecording(true);
+        }
+    });
 }
 
 async function toggleLibrary() {

@@ -13,5 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     updateConfig: (config) => ipcRenderer.invoke('update-config', config),
     openOutputDirectory: () => ipcRenderer.invoke('open-output-directory'),
     openFile: (filePath) => ipcRenderer.invoke('open-file', filePath),
-    getFileBuffer: (filePath) => ipcRenderer.invoke('get-file-buffer', filePath)
+    getFileBuffer: (filePath) => ipcRenderer.invoke('get-file-buffer', filePath),
+    onStartManualRecording: (callback) => ipcRenderer.on('start-manual-recording', () => callback()),
+    onStopRecording: (callback) => ipcRenderer.on('stop-recording', () => callback())
 });
