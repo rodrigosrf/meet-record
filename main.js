@@ -221,12 +221,15 @@ function startDetectionLoop() {
                 thumbnailSize: { width: 0, height: 0 }
             });
 
+            // Broaden the filter to include any window that might belong to Teams
             const potentialMeetingWindows = sources.filter(source => {
                 const name = source.name.toLowerCase();
-                return (name.includes('reuni') || name.includes('meeting') || name.includes('teams') || name.includes('call') || name.includes('chamada')) &&
-                       !name.startsWith('chat |') && 
-                       !name.startsWith('calendar |') &&
-                       name !== 'microsoft teams';
+                // If it mentions Teams or meeting-related keywords, we check deeper
+                return name.includes('teams') || 
+                       name.includes('reuni') || 
+                       name.includes('meeting') || 
+                       name.includes('chamada') || 
+                       name.includes('call');
             });
 
             if (potentialMeetingWindows.length === 0) {
@@ -237,13 +240,19 @@ function startDetectionLoop() {
             }
 
             const scriptPath = path.join(__dirname, 'detectMeetings.ps1');
+            // Use -NoProfile and -ExecutionPolicy Bypass for faster/safer execution
+            // We use [Console]::OutputEncoding to match the script's setting
             const command = `powershell -NoProfile -ExecutionPolicy Bypass -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; & '${scriptPath}'"`;
 
-            exec(command, (error, stdout, stderr) => {
-                if (error) return;
+            exec(command, { encoding: 'utf8' }, (error, stdout, stderr) => {
+                if (error) {
+                    console.error('PowerShell error:', error);
+                    return;
+                }
 
                 try {
-                    const jsonMatch = stdout.match(/(\[[\s\S]*\]|"(?:\\.|[^"\\])*")/);
+                    // Improved regex to find the JSON array even if there's other output
+                    const jsonMatch = stdout.match(/\[.*\]/s);
                     if (!jsonMatch) {
                         if (mainWindow && !mainWindow.isDestroyed()) {
                             mainWindow.webContents.send('no-meeting-detected');
@@ -251,7 +260,7 @@ function startDetectionLoop() {
                         return;
                     }
 
-                    const meetingTitles = JSON.parse(jsonMatch[1]);
+                    const meetingTitles = JSON.parse(jsonMatch[0]);
                     const titlesArray = Array.isArray(meetingTitles) ? meetingTitles : [meetingTitles];
 
                     if (titlesArray.length > 0 && mainWindow && !mainWindow.isDestroyed()) {
@@ -259,8 +268,12 @@ function startDetectionLoop() {
                     } else if (mainWindow && !mainWindow.isDestroyed()) {
                         mainWindow.webContents.send('no-meeting-detected');
                     }
-                } catch (parseError) {}
+                } catch (parseError) {
+                    console.error('Error parsing PowerShell output:', parseError, stdout);
+                }
             });
-        } catch (error) {}
+        } catch (error) {
+            console.error('Detection loop error:', error);
+        }
     }, 5000);
 }
