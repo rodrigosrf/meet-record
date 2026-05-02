@@ -12,5 +12,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getLibraryVideos: () => ipcRenderer.invoke('get-library-videos'),
     updateConfig: (config) => ipcRenderer.invoke('update-config', config),
     openOutputDirectory: () => ipcRenderer.invoke('open-output-directory'),
-    openFile: (filePath) => ipcRenderer.invoke('open-file', filePath)
+    openFile: (filePath) => ipcRenderer.invoke('open-file', filePath),
+    getFileBuffer: (filePath) => ipcRenderer.invoke('get-file-buffer', filePath)
 });

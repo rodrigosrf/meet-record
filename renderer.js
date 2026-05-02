@@ -207,6 +207,11 @@ async function handleManualStart() {
         return;
     }
 
+    // Stop playback if active
+    if (playbackAudio) {
+        stopPlayback();
+    }
+
     isManualRecording = true;
     statusLabel.textContent = "Buscando Janelas...";
     const sources = await window.electronAPI.getSources();
@@ -234,6 +239,11 @@ async function handleManualStart() {
 }
 
 async function handleMeetingDetected(title) {
+    // Stop playback if active
+    if (playbackAudio) {
+        stopPlayback();
+    }
+
     isManualRecording = false;
     currentMeetingName = title;
     meetingTitle.textContent = title;
@@ -381,11 +391,116 @@ function updateTimer() {
         `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
+let playbackAudio = null;
+let playbackInterval = null;
+
 async function openRecording(filePath) {
-    const result = await window.electronAPI.openFile(filePath);
-    if (!result.success) {
-        alert(result.error);
+    try {
+        if (isRecording) {
+            alert("Não é possível reproduzir enquanto uma gravação está em andamento.");
+            return;
+        }
+
+        const result = await window.electronAPI.getFileBuffer(filePath);
+        if (result.success) {
+            // Clean up previous playback
+            stopPlayback();
+
+            const blob = new Blob([result.buffer], { type: 'audio/mp3' });
+            const url = URL.createObjectURL(blob);
+            
+            playbackAudio = new Audio(url);
+            
+            const playbackControls = document.getElementById('playbackControls');
+            const cardControls = document.getElementById('cardControls');
+            const playerFileName = document.getElementById('playerFileName');
+            const playerRange = document.getElementById('playerRange');
+            const playPauseBtn = document.getElementById('playPauseBtn');
+            const stopPlaybackBtn = document.getElementById('stopPlaybackBtn');
+            const playIcon = document.getElementById('playIcon');
+            const pauseIcon = document.getElementById('pauseIcon');
+            
+            // Set UI state
+            const fileName = filePath.split(/[\\/]/).pop();
+            playerFileName.textContent = fileName;
+            statusLabel.textContent = "Reproduzindo...";
+            meetingTitle.textContent = "Modo Player";
+            
+            cardControls.classList.add('hidden');
+            playbackControls.classList.remove('hidden');
+            mainCard.classList.add('playing');
+            
+            playbackAudio.onloadedmetadata = () => {
+                playerRange.max = playbackAudio.duration;
+            };
+
+            playbackAudio.ontimeupdate = () => {
+                playerRange.value = playbackAudio.currentTime;
+            };
+
+            playbackAudio.onended = () => {
+                stopPlayback();
+            };
+
+            playPauseBtn.onclick = () => {
+                if (playbackAudio.paused) {
+                    playbackAudio.play();
+                    playIcon.classList.add('hidden');
+                    pauseIcon.classList.remove('hidden');
+                } else {
+                    playbackAudio.pause();
+                    playIcon.classList.remove('hidden');
+                    pauseIcon.classList.add('hidden');
+                }
+            };
+
+            playerRange.oninput = () => {
+                playbackAudio.currentTime = playerRange.value;
+            };
+
+            stopPlaybackBtn.onclick = () => {
+                stopPlayback();
+            };
+
+            // Start playing
+            playbackAudio.play();
+            playIcon.classList.add('hidden');
+            pauseIcon.classList.remove('hidden');
+            
+        } else {
+            alert(result.error);
+        }
+    } catch (err) {
+        console.error("Erro ao carregar áudio:", err);
+        alert("Erro ao carregar arquivo de áudio.");
     }
+}
+
+function stopPlayback() {
+    if (playbackAudio) {
+        playbackAudio.pause();
+        const url = playbackAudio.src;
+        if (url.startsWith('blob:')) {
+            URL.revokeObjectURL(url);
+        }
+        playbackAudio = null;
+    }
+
+    const playbackControls = document.getElementById('playbackControls');
+    const cardControls = document.getElementById('cardControls');
+    const playIcon = document.getElementById('playIcon');
+    const pauseIcon = document.getElementById('pauseIcon');
+
+    playbackControls.classList.add('hidden');
+    cardControls.classList.remove('hidden');
+    mainCard.classList.remove('playing');
+    
+    statusLabel.textContent = "Aguardando Reunião...";
+    meetingTitle.textContent = "Nenhuma reunião detectada";
+    meetingTime.textContent = "00:00:00";
+    
+    playIcon.classList.remove('hidden');
+    pauseIcon.classList.add('hidden');
 }
 
 window.openRecording = openRecording;

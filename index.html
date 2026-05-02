@@ -52,7 +52,7 @@
                     <p id="meetingTime">00:00:00</p>
                 </div>
                 
-                <div class="visualizer">
+                <div class="visualizer" id="mainVisualizer">
                     <div class="bar"></div>
                     <div class="bar"></div>
                     <div class="bar"></div>
@@ -63,8 +63,28 @@
                     <div class="bar"></div>
                 </div>
 
-                <button id="startBtn" class="btn-primary" style="margin-top: 2rem; width: 100%;">Iniciar Gravação Manual</button>
-                <button id="stopBtn" class="btn-danger hidden" style="margin-top: 2rem; width: 100%;">Finalizar Gravação</button>
+                <!-- Main Card Controls -->
+                <div class="card-controls" id="cardControls">
+                    <button id="startBtn" class="btn-primary" style="width: 100%;">Iniciar Gravação Manual</button>
+                    <button id="stopBtn" class="btn-danger hidden" style="width: 100%;">Finalizar Gravação</button>
+                </div>
+
+                <!-- Playback Controls (Hidden by default) -->
+                <div class="playback-controls hidden" id="playbackControls">
+                    <div class="player-info">
+                        <span id="playerFileName">arquivo.mp3</span>
+                    </div>
+                    <div class="player-progress">
+                        <input type="range" id="playerRange" value="0" step="0.1" min="0" max="100">
+                    </div>
+                    <div class="player-actions">
+                        <button id="playPauseBtn" class="btn-icon-large">
+                            <svg id="playIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                            <svg id="pauseIcon" class="hidden" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                        </button>
+                        <button id="stopPlaybackBtn" class="btn-danger-outline">Fechar Player</button>
+                    </div>
+                </div>
             </div>
 
             <div class="config-alert" id="configAlert">

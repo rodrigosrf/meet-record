@@ -125,6 +125,14 @@ ipcMain.handle('open-file', async (event, filePath) => {
     return { success: false, error: 'Arquivo não encontrado.' };
 });
 
+ipcMain.handle('get-file-buffer', async (event, filePath) => {
+    if (fs.existsSync(filePath)) {
+        const buffer = fs.readFileSync(filePath);
+        return { success: true, buffer: new Uint8Array(buffer) };
+    }
+    return { success: false, error: 'Arquivo não encontrado.' };
+});
+
 ipcMain.handle('get-library-videos', async () => {
     const outputDir = store.get('outputDirectory');
     if (!outputDir || !fs.existsSync(outputDir)) return [];
@@ -215,7 +223,7 @@ function startDetectionLoop() {
 
             const potentialMeetingWindows = sources.filter(source => {
                 const name = source.name.toLowerCase();
-                return (name.includes('reuni') || name.includes('meeting') || name.includes('teams')) &&
+                return (name.includes('reuni') || name.includes('meeting') || name.includes('teams') || name.includes('call') || name.includes('chamada')) &&
                        !name.startsWith('chat |') && 
                        !name.startsWith('calendar |') &&
                        name !== 'microsoft teams';
