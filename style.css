@@ -564,8 +564,11 @@ footer {
     border-radius: 12px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
     transition: all 0.2s ease;
+    position: relative; /* Added for absolute positioning of order badge */
+    margin-top: 8px; /* Added space for the badge overflow */
+    margin-left: 8px;
 }
 
 .library-item:hover {
@@ -573,11 +576,55 @@ footer {
     transform: translateX(-4px);
 }
 
+.lib-item-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.lib-item-order {
+    position: absolute;
+    top: -10px;
+    left: -10px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(56, 189, 248, 0.2);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: var(--accent-color);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2), inset 0 0 8px rgba(56, 189, 248, 0.1);
+    z-index: 2;
+    transition: all 0.3s ease;
+}
+
+.library-item:hover .lib-item-order {
+    background: rgba(56, 189, 248, 0.3);
+    border-color: var(--accent-color);
+    transform: scale(1.1);
+    box-shadow: 0 4px 15px rgba(56, 189, 248, 0.3);
+}
+
+.lib-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
 .lib-item-info h4 {
     font-size: 0.875rem;
     font-weight: 600;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
     word-break: break-all;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .lib-item-info span {

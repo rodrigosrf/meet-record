@@ -163,7 +163,7 @@ async function renderLibrary(skipFetch = false) {
         const groupContainer = document.createElement('div');
         groupContainer.className = 'date-group';
         
-        groups[dateLabel].forEach(rec => {
+        groups[dateLabel].forEach((rec, index) => {
             const item = document.createElement('div');
             item.className = 'library-item';
             
@@ -171,10 +171,15 @@ async function renderLibrary(skipFetch = false) {
                 hour: '2-digit', minute: '2-digit'
             });
 
+            const order = groups[dateLabel].length - index;
+
             item.innerHTML = `
-                <div class="lib-item-info">
-                    <h4>${rec.name}</h4>
-                    <span>${dateStr}</span>
+                <div class="lib-item-header">
+                    <div class="lib-item-order">${order}</div>
+                    <div class="lib-item-info">
+                        <h4>${rec.name}</h4>
+                        <span>${dateStr}</span>
+                    </div>
                 </div>
                 <div class="lib-item-actions">
                      <button class="btn-small" onclick="openRecording('${rec.path.replace(/\\/g, '\\\\')}')">Ouvir</button>
