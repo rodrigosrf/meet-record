@@ -1,18 +1,41 @@
 {
   "name": "meet-record",
   "version": "1.0.0",
+  "description": "Meet Record - Gravação e Gerenciamento de Reuniões",
   "main": "main.js",
   "type": "module",
+  "author": "Rodrigo",
   "scripts": {
     "start": "electron .",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.meetrecord.app",
+    "productName": "Meet Record",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Meet Record"
+    }
   },
   "keywords": [],
-  "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
-    "electron": "^41.3.0",
     "electron-store": "^11.0.2"
+  },
+  "devDependencies": {
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1"
   }
 }

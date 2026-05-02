@@ -92,15 +92,7 @@ ipcMain.handle('select-directory', async () => {
 
 ipcMain.handle('get-config', () => {
     return {
-        outputDirectory: store.get('outputDirectory'),
-        autoTranscribe: store.get('autoTranscribe', true),
-        aiConfig: store.get('aiConfig', {
-            provider: 'openrouter',
-            model: 'openai/gpt-4o',
-            apiKey: '',
-            systemPrompt: 'Você é um assistente útil que resume reuniões de forma executiva, destacando pontos principais, decisões tomadas e próximos passos.',
-            autoSummarize: false
-        })
+        outputDirectory: store.get('outputDirectory')
     };
 });
 
@@ -108,13 +100,6 @@ ipcMain.handle('update-config', (event, newConfig) => {
     if (newConfig.outputDirectory !== undefined) {
         store.set('outputDirectory', newConfig.outputDirectory);
         mainWindow.webContents.send('config-updated', { outputDirectory: newConfig.outputDirectory });
-    }
-    if (newConfig.autoTranscribe !== undefined) {
-        store.set('autoTranscribe', newConfig.autoTranscribe);
-    }
-    if (newConfig.aiConfig !== undefined) {
-        const currentAiConfig = store.get('aiConfig') || {};
-        store.set('aiConfig', { ...currentAiConfig, ...newConfig.aiConfig });
     }
     return { success: true };
 });
@@ -132,11 +117,19 @@ ipcMain.handle('open-output-directory', async () => {
     return { success: false, error: 'Diretório não configurado ou não encontrado.' };
 });
 
+ipcMain.handle('open-file', async (event, filePath) => {
+    if (fs.existsSync(filePath)) {
+        shell.openPath(filePath);
+        return { success: true };
+    }
+    return { success: false, error: 'Arquivo não encontrado.' };
+});
+
 ipcMain.handle('get-library-videos', async () => {
     const outputDir = store.get('outputDirectory');
     if (!outputDir || !fs.existsSync(outputDir)) return [];
 
-    const videos = [];
+    const recordings = [];
     
     function scanDir(currentPath) {
         const files = fs.readdirSync(currentPath);
@@ -145,17 +138,11 @@ ipcMain.handle('get-library-videos', async () => {
             const stat = fs.statSync(fullPath);
             if (stat.isDirectory()) {
                 scanDir(fullPath);
-            } else if (file.endsWith('.webm')) {
-                const baseName = path.parse(file).name;
-                const dir = path.dirname(fullPath);
-                const hasTranscription = fs.readdirSync(dir).some(f => 
-                    f.startsWith(baseName) && (f.endsWith('.txt') || f.endsWith('.srt'))
-                );
-                videos.push({
+            } else if (file.endsWith('.mp3')) {
+                recordings.push({
                     name: file,
                     path: fullPath,
-                    date: stat.birthtime,
-                    transcribed: hasTranscription
+                    date: stat.birthtime
                 });
             }
         });
@@ -163,143 +150,11 @@ ipcMain.handle('get-library-videos', async () => {
 
     try {
         scanDir(outputDir);
-        
-        // Add summary status
-        videos.forEach(v => {
-            const baseName = path.parse(v.path).name;
-            const dir = path.dirname(v.path);
-            v.summarized = fs.existsSync(path.join(dir, `${baseName}_summary.md`));
-        });
-
-        return videos.sort((a, b) => b.date - a.date);
+        return recordings.sort((a, b) => b.date - a.date);
     } catch (err) {
         console.error("Error scanning library:", err);
         return [];
     }
-});
-
-ipcMain.handle('request-transcription', async (event, filePath) => {
-    if (fs.existsSync(filePath)) {
-        addToTranscriptionQueue(filePath);
-        return { success: true };
-    }
-    return { success: false, error: 'File not found' };
-});
-
-ipcMain.handle('cancel-transcription', async (event, filePath) => {
-    const childProcess = activeProcesses.get(filePath);
-    const queueIndex = transcriptionQueue.indexOf(filePath);
-
-    if (childProcess || queueIndex > -1) {
-        if (childProcess) {
-            childProcess.kill();
-            activeProcesses.delete(filePath);
-        }
-        if (queueIndex > -1) {
-            transcriptionQueue.splice(queueIndex, 1);
-        }
-        
-        const baseName = path.parse(filePath).name;
-        const dir = path.dirname(filePath);
-        const extensions = ['.txt', '.srt', '.vtt', '.tsv', '.json'];
-        try {
-            const files = fs.readdirSync(dir);
-            files.forEach(file => {
-                if (file.startsWith(baseName) && extensions.some(ext => file.endsWith(ext))) {
-                    fs.unlinkSync(path.join(dir, file));
-                }
-            });
-        } catch (err) {
-            console.error("Error cleaning up canceled transcription files:", err);
-        }
-
-        if (mainWindow) {
-            mainWindow.webContents.send('transcription-status', { 
-                status: 'canceled', 
-                file: path.basename(filePath),
-                fullPath: filePath
-            });
-        }
-        return { success: true };
-    }
-    return { success: false, error: 'Process not found' };
-});
-
-async function generateSummaryAction(filePath) {
-    const aiConfig = store.get('aiConfig');
-    if (!aiConfig || !aiConfig.apiKey) {
-        return { success: false, error: 'Chave de API não configurada.' };
-    }
-
-    const baseName = path.parse(filePath).name;
-    const dir = path.dirname(filePath);
-    const txtPath = path.join(dir, `${baseName}.txt`);
-
-    if (!fs.existsSync(txtPath)) {
-        return { success: false, error: 'Arquivo de transcrição não encontrado. Transcreva o vídeo primeiro.' };
-    }
-
-    try {
-        const transcription = fs.readFileSync(txtPath, 'utf8');
-        
-        let apiUrl = '';
-        let headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${aiConfig.apiKey}`
-        };
-
-        if (aiConfig.provider === 'openrouter') {
-            apiUrl = 'https://openrouter.ai/api/v1/chat/completions';
-            headers['HTTP-Referer'] = 'https://github.com/rodrigosrf/meet-record';
-            headers['X-Title'] = 'Meet Recorder';
-        } else if (aiConfig.provider === 'openai') {
-            apiUrl = 'https://api.openai.com/v1/chat/completions';
-        } else if (aiConfig.provider === 'gemini') {
-            apiUrl = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-        }
-
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify({
-                model: aiConfig.model || 'openai/gpt-4o',
-                messages: [
-                    { role: 'system', content: aiConfig.systemPrompt },
-                    { role: 'user', content: `Por favor, resuma a seguinte transcrição de reunião:\n\n${transcription}` }
-                ]
-            })
-        });
-
-        const data = await response.json();
-        if (data.error) {
-            throw new Error(data.error.message || JSON.stringify(data.error));
-        }
-
-        const summary = data.choices[0].message.content;
-        const summaryPath = path.join(dir, `${baseName}_summary.md`);
-        fs.writeFileSync(summaryPath, summary);
-
-        return { success: true, summary, path: summaryPath };
-    } catch (error) {
-        console.error('Error generating summary:', error);
-        return { success: false, error: error.message };
-    }
-}
-
-ipcMain.handle('generate-summary', async (event, filePath) => {
-    return await generateSummaryAction(filePath);
-});
-
-ipcMain.handle('get-summary', async (event, videoPath) => {
-    const baseName = path.parse(videoPath).name;
-    const dir = path.dirname(videoPath);
-    const summaryPath = path.join(dir, `${baseName}_summary.md`);
-
-    if (fs.existsSync(summaryPath)) {
-        const content = fs.readFileSync(summaryPath, 'utf8');
-        return { success: true, content };
-    }
-    return { success: false, error: 'Resumo não encontrado.' };
 });
 
 ipcMain.handle('save-file', async (event, { buffer, fileName }) => {
@@ -311,113 +166,42 @@ ipcMain.handle('save-file', async (event, { buffer, fileName }) => {
     const day = String(now.getDate()).padStart(2, '0');
     const dateDir = `${month}-${day}`;
     const targetDir = path.join(outputDir, dateDir);
-    const filePath = path.join(targetDir, fileName);
-
-    try {
-        if (!fs.existsSync(targetDir)) {
-            fs.mkdirSync(targetDir, { recursive: true });
-        }
-        fs.writeFileSync(filePath, Buffer.from(buffer));
-        
-        if (store.get('autoTranscribe', true)) {
-            addToTranscriptionQueue(filePath);
-        }
-        return { success: true, path: filePath };
-    } catch (error) {
-        console.error('Error saving file:', error);
-        return { success: false, error: error.message };
-    }
-});
-
-function addToTranscriptionQueue(filePath) {
-    if (transcriptionQueue.includes(filePath) || activeProcesses.has(filePath)) {
-        return;
-    }
-
-    transcriptionQueue.push(filePath);
-
-    if (mainWindow) {
-        mainWindow.webContents.send('transcription-status', { 
-            status: 'queued', 
-            file: path.basename(filePath),
-            fullPath: filePath 
-        });
-    }
-
-    if (!isProcessingQueue) {
-        processNextInQueue();
-    }
-}
-
-async function processNextInQueue() {
-    if (transcriptionQueue.length === 0) {
-        isProcessingQueue = false;
-        return;
-    }
-
-    isProcessingQueue = true;
-    const filePath = transcriptionQueue.shift();
-    runTranscription(filePath);
-}
-
-function runTranscription(filePath) {
-    if (mainWindow) {
-        mainWindow.webContents.send('transcription-status', { 
-            status: 'started', 
-            file: path.basename(filePath),
-            fullPath: filePath 
-        });
-    }
-
-    const command = `whisper "${filePath}" --model medium --language Portuguese --output_dir "${path.dirname(filePath)}"`;
     
-    const childProcess = exec(command, (error, stdout, stderr) => {
-        activeProcesses.delete(filePath);
-        
-        if (error) {
-            if (!childProcess.killed && mainWindow) {
-                mainWindow.webContents.send('transcription-status', { 
-                    status: 'error', 
-                    message: error.message,
-                    file: path.basename(filePath),
-                    fullPath: filePath
-                });
-            }
-            processNextInQueue();
-            return;
-        }
-        
-        if (mainWindow) {
-            mainWindow.webContents.send('transcription-status', { 
-                status: 'finished', 
-                file: path.basename(filePath),
-                fullPath: filePath
-            });
-        }
+    if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+    }
 
-        // Check for auto-summarize
-        const aiConfig = store.get('aiConfig');
-        if (aiConfig && aiConfig.autoSummarize && aiConfig.apiKey) {
-            console.log("Auto-summarizing transcription for:", filePath);
-            ipcMain.emit('generate-summary-internal', filePath);
-        }
+    const tempWebmPath = path.join(targetDir, `temp_${Date.now()}.webm`);
+    const finalMp3Name = fileName.replace('.webm', '.mp3');
+    const finalMp3Path = path.join(targetDir, finalMp3Name);
 
-        processNextInQueue();
-    });
-
-    activeProcesses.set(filePath, childProcess);
-}
-
-// Internal summary generation to avoid IPC overhead when calling from main
-ipcMain.on('generate-summary-internal', async (filePath) => {
     try {
-        await generateSummaryAction(filePath);
-        // Refresh library in renderer if possible
-        if (mainWindow) {
-            mainWindow.webContents.send('config-updated', {}); // Trigger a refresh indirectly or use a specific event
-        }
-    } catch (e) {
-        console.error("Auto-summary failed:", e);
+        // 1. Save temp webm file
+        fs.writeFileSync(tempWebmPath, Buffer.from(buffer));
+        
+        // 2. Convert to mp3 using ffmpeg
+        // -vn: no video, -ab: audio bitrate
+        const ffmpegCommand = `ffmpeg -i "${tempWebmPath}" -vn -ab 128k "${finalMp3Path}"`;
+        
+        return new Promise((resolve) => {
+            exec(ffmpegCommand, (error) => {
+                // Delete temp file regardless of error
+                if (fs.existsSync(tempWebmPath)) {
+                    fs.unlinkSync(tempWebmPath);
+                }
+
+                if (error) {
+                    console.error('Error converting to mp3:', error);
+                    resolve({ success: false, error: 'Falha na conversão para MP3. Verifique se o ffmpeg está instalado.' });
+                } else {
+                    resolve({ success: true, path: finalMp3Path });
+                }
+            });
+        });
+
+    } catch (error) {
+        console.error('Error saving/converting file:', error);
+        return { success: false, error: error.message };
     }
 });
 

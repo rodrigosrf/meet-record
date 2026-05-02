@@ -1,5 +1,10 @@
 # Dependencies
 node_modules/
+package-lock.json
+
+# Build output
+dist/
+build/
 
 # Recordings and large media files
 *.webm
@@ -8,6 +13,15 @@ node_modules/
 # Temporary/Debug files
 scratch/
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
 
 # OS generated files
 .DS_Store
@@ -15,3 +29,5 @@ Thumbs.db
 
 # Environment variables
 .env
+.env.local
+.env.*.local
