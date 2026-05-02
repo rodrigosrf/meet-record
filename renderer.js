@@ -370,16 +370,13 @@ async function saveRecording() {
     let fileName = "";
     const now = new Date();
     
+    const timestamp = now.toISOString().replace(/[:.]/g, '-');
+    
     if (isManualRecording) {
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        const hour = String(now.getHours()).padStart(2, '0');
-        const minute = String(now.getMinutes()).padStart(2, '0');
-        fileName = `audio-${month}-${day}-${hour}-${minute}.webm`;
+        fileName = `${timestamp}_grav_manual.webm`;
     } else {
-        const timestamp = now.toISOString().replace(/[:.]/g, '-');
         const safeTitle = currentMeetingName.replace(/[<>:"/\\|?*]/g, '');
-        fileName = `${safeTitle}_${timestamp}.webm`;
+        fileName = `${timestamp}_${safeTitle}.webm`;
     }
     
     const result = await window.electronAPI.saveFile({ buffer, fileName });
