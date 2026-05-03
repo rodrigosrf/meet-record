@@ -14,6 +14,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openOutputDirectory: () => ipcRenderer.invoke('open-output-directory'),
     openFile: (filePath) => ipcRenderer.invoke('open-file', filePath),
     getFileBuffer: (filePath) => ipcRenderer.invoke('get-file-buffer', filePath),
+    deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
+    saveScreenshot: (data) => ipcRenderer.invoke('save-screenshot', data),
+    discardMeetingScreenshots: (folderName) => ipcRenderer.invoke('discard-meeting-screenshots', folderName),
     onStartManualRecording: (callback) => ipcRenderer.on('start-manual-recording', () => callback()),
-    onStopRecording: (callback) => ipcRenderer.on('stop-recording', () => callback())
+    onStopRecording: (callback) => ipcRenderer.on('stop-recording', () => callback()),
+    onTriggerManualScreenshot: (callback) => ipcRenderer.on('trigger-manual-screenshot', () => callback())
 });

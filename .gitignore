@@ -5,20 +5,24 @@ package-lock.json
 # Build output
 dist/
 build/
+*.exe
+*.dmg
+*.AppImage
 
-# Recordings and large media files
+# Recordings and Media (Output of the app)
+*.mp3
 *.webm
 *.mp4
 *.mkv
-*.mov
-*.avi
-*.mp3
 *.wav
-*.m4a
-*.aac
-*.ogg
-*.flac
+*.jpg
+*.jpeg
+*.png
+
+# Recording folders (Date based)
+202[0-9]-*-*/
 [0-1][0-9]-[0-3][0-9]/
+images/
 
 # Temporary/Debug files
 scratch/
@@ -26,18 +30,23 @@ scratch/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.eslintcache
 
 # IDE/Editor
 .vscode/
 .idea/
 *.swp
 *.swo
+*.sublime-project
+*.sublime-workspace
 
 # OS generated files
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Environment variables
 .env
 .env.local
 .env.*.local
+

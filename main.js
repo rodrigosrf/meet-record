@@ -8,7 +8,12 @@ import Store from 'electron-store';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const store = new Store();
+const store = new Store({
+    defaults: {
+        screenshotInterval: 60, // seconds
+        smartCapture: true
+    }
+});
 
 let mainWindow;
 let settingsWindow;
@@ -24,6 +29,7 @@ function createWindow() {
         width: 800,
         height: 600,
         title: 'Meet Recorder - Monitor',
+        icon: path.join(__dirname, 'assets', 'icon.ico'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -70,6 +76,12 @@ function createTray() {
                 mainWindow.webContents.send('stop-recording');
             }
         },
+        {
+            label: 'Tirar Print Manual',
+            click: () => {
+                mainWindow.webContents.send('trigger-manual-screenshot');
+            }
+        },
         { type: 'separator' },
         { 
             label: 'Sair', 
@@ -102,6 +114,7 @@ function createSettingsWindow() {
         width: 850,
         height: 600,
         title: 'Configurações',
+        icon: path.join(__dirname, 'assets', 'icon.ico'),
         parent: mainWindow,
         modal: true,
         webPreferences: {
@@ -122,6 +135,7 @@ app.whenReady().then(() => {
     createWindow();
     createTray();
     startDetectionLoop();
+    cleanupOldImages();
 
     app.on('activate', function () {
         if (BrowserWindow.getAllWindows().length === 0) {
@@ -159,15 +173,30 @@ ipcMain.handle('select-directory', async () => {
 
 ipcMain.handle('get-config', () => {
     return {
-        outputDirectory: store.get('outputDirectory')
+        outputDirectory: store.get('outputDirectory'),
+        screenshotInterval: store.get('screenshotInterval'),
+        smartCapture: store.get('smartCapture')
     };
 });
 
 ipcMain.handle('update-config', (event, newConfig) => {
     if (newConfig.outputDirectory !== undefined) {
         store.set('outputDirectory', newConfig.outputDirectory);
-        mainWindow.webContents.send('config-updated', { outputDirectory: newConfig.outputDirectory });
     }
+    if (newConfig.screenshotInterval !== undefined) {
+        store.set('screenshotInterval', newConfig.screenshotInterval);
+    }
+    if (newConfig.smartCapture !== undefined) {
+        store.set('smartCapture', newConfig.smartCapture);
+    }
+    
+    const updatedConfig = {
+        outputDirectory: store.get('outputDirectory'),
+        screenshotInterval: store.get('screenshotInterval'),
+        smartCapture: store.get('smartCapture')
+    };
+    
+    mainWindow.webContents.send('config-updated', updatedConfig);
     return { success: true };
 });
 
@@ -200,6 +229,25 @@ ipcMain.handle('get-file-buffer', async (event, filePath) => {
     return { success: false, error: 'Arquivo não encontrado.' };
 });
 
+ipcMain.handle('delete-file', async (event, filePath) => {
+    try {
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            
+            // Also try to delete metadata json
+            const metadataPath = filePath.replace('.mp3', '.json');
+            if (fs.existsSync(metadataPath)) {
+                fs.unlinkSync(metadataPath);
+            }
+            return { success: true };
+        }
+        return { success: false, error: 'Arquivo não encontrado.' };
+    } catch (error) {
+        console.error('Error deleting file:', error);
+        return { success: false, error: error.message };
+    }
+});
+
 ipcMain.handle('get-library-videos', async () => {
     const outputDir = store.get('outputDirectory');
     if (!outputDir || !fs.existsSync(outputDir)) return [];
@@ -214,10 +262,21 @@ ipcMain.handle('get-library-videos', async () => {
             if (stat.isDirectory()) {
                 scanDir(fullPath);
             } else if (file.endsWith('.mp3')) {
+                const metadataPath = fullPath.replace('.mp3', '.json');
+                let metadata = {};
+                if (fs.existsSync(metadataPath)) {
+                    try {
+                        metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+                    } catch (e) {
+                        console.error("Error reading metadata:", e);
+                    }
+                }
+
                 recordings.push({
                     name: file,
                     path: fullPath,
-                    date: stat.birthtime
+                    date: stat.birthtime,
+                    metadata: metadata
                 });
             }
         });
@@ -232,14 +291,15 @@ ipcMain.handle('get-library-videos', async () => {
     }
 });
 
-ipcMain.handle('save-file', async (event, { buffer, fileName }) => {
+ipcMain.handle('save-file', async (event, { buffer, fileName, metadata }) => {
     const outputDir = store.get('outputDirectory');
     if (!outputDir) return { success: false, error: 'No output directory' };
 
     const now = new Date();
+    const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
-    const dateDir = `${month}-${day}`;
+    const dateDir = `${year}-${month}-${day}`;
     const targetDir = path.join(outputDir, dateDir);
     
     if (!fs.existsSync(targetDir)) {
@@ -254,9 +314,25 @@ ipcMain.handle('save-file', async (event, { buffer, fileName }) => {
         // 1. Save temp webm file
         fs.writeFileSync(tempWebmPath, Buffer.from(buffer));
         
-        // 2. Convert to mp3 using ffmpeg
-        // -vn: no video, -ab: audio bitrate
-        const ffmpegCommand = `ffmpeg -i "${tempWebmPath}" -vn -ab 128k "${finalMp3Path}"`;
+        // 2. Convert to mp3 using ffmpeg with metadata
+        let metadataArgs = '';
+        if (metadata) {
+            let combinedTitle = metadata.title || 'Sem Título';
+            if (metadata.note) {
+                combinedTitle += ` - ${metadata.note.replace(/\r?\n/g, ' ')}`;
+            }
+            
+            const safeTitle = combinedTitle.replace(/"/g, '\\"');
+            metadataArgs += ` -metadata title="${safeTitle}"`;
+            
+            // Keep the comment for other players, but focus on Title for Windows
+            if (metadata.note) {
+                const safeNote = metadata.note.replace(/"/g, '\\"').replace(/\r?\n/g, ' ');
+                metadataArgs += ` -metadata comment="${safeNote}"`;
+            }
+        }
+
+        const ffmpegCommand = `ffmpeg -i "${tempWebmPath}" -vn -ab 128k -id3v2_version 3${metadataArgs} "${finalMp3Path}"`;
         
         return new Promise((resolve) => {
             exec(ffmpegCommand, (error) => {
@@ -269,6 +345,11 @@ ipcMain.handle('save-file', async (event, { buffer, fileName }) => {
                     console.error('Error converting to mp3:', error);
                     resolve({ success: false, error: 'Falha na conversão para MP3. Verifique se o ffmpeg está instalado.' });
                 } else {
+                    // Save metadata if provided
+                    if (metadata) {
+                        const metadataPath = finalMp3Path.replace('.mp3', '.json');
+                        fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+                    }
                     resolve({ success: true, path: finalMp3Path });
                 }
             });
@@ -279,6 +360,83 @@ ipcMain.handle('save-file', async (event, { buffer, fileName }) => {
         return { success: false, error: error.message };
     }
 });
+
+ipcMain.handle('save-screenshot', async (event, { buffer, fileName, folderName }) => {
+    const outputDir = store.get('outputDirectory');
+    if (!outputDir) return { success: false, error: 'Diretório de saída não configurado.' };
+
+    let imagesDir = path.join(outputDir, 'images');
+    if (folderName) {
+        imagesDir = path.join(imagesDir, folderName);
+    }
+
+    try {
+        if (!fs.existsSync(imagesDir)) {
+            fs.mkdirSync(imagesDir, { recursive: true });
+        }
+
+        const filePath = path.join(imagesDir, fileName);
+        fs.writeFileSync(filePath, Buffer.from(buffer));
+        return { success: true };
+    } catch (error) {
+        console.error('Error saving screenshot:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('discard-meeting-screenshots', async (event, folderName) => {
+    const outputDir = store.get('outputDirectory');
+    if (!outputDir || !folderName) return { success: false };
+
+    const folderPath = path.join(outputDir, 'images', folderName);
+    try {
+        if (fs.existsSync(folderPath)) {
+            // Use recursive delete
+            fs.rmSync(folderPath, { recursive: true, force: true });
+            return { success: true };
+        }
+    } catch (error) {
+        console.error('Error discarding screenshots:', error);
+    }
+    return { success: false };
+});
+
+function cleanupOldImages() {
+    const outputDir = store.get('outputDirectory');
+    if (!outputDir) return;
+
+    const imagesDir = path.join(outputDir, 'images');
+    if (!fs.existsSync(imagesDir)) return;
+
+    try {
+        const MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
+        const now = Date.now();
+
+        function cleanDir(dir) {
+            const items = fs.readdirSync(dir);
+            items.forEach(item => {
+                const fullPath = path.join(dir, item);
+                const stats = fs.statSync(fullPath);
+                
+                if (stats.isDirectory()) {
+                    cleanDir(fullPath);
+                    // Delete empty directories
+                    if (fs.readdirSync(fullPath).length === 0) {
+                        fs.rmdirSync(fullPath);
+                    }
+                } else {
+                    if (now - stats.mtimeMs > MAX_AGE) {
+                        fs.unlinkSync(fullPath);
+                    }
+                }
+            });
+        }
+
+        cleanDir(imagesDir);
+    } catch (error) {
+        console.error('Error during cleanup:', error);
+    }
+}
 
 function startDetectionLoop() {
     detectionInterval = setInterval(async () => {

@@ -216,7 +216,7 @@ main {
 
 .recording .bar {
     opacity: 1;
-    animation: wave 1s infinite ease-in-out;
+    /* Animation removed to allow JS control */
 }
 
 .bar:nth-child(2) { animation-delay: 0.1s; }
@@ -230,6 +230,43 @@ main {
 @keyframes wave {
     0%, 100% { height: 10px; }
     50% { height: 35px; }
+}
+
+.notes-container {
+    width: 100%;
+    margin-top: 1.5rem;
+    padding: 0 1rem;
+    animation: fadeIn 0.3s ease;
+}
+
+.notes-container textarea {
+    width: 100%;
+    height: 80px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 12px;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    resize: none;
+    outline: none;
+    transition: all 0.3s ease;
+}
+
+.notes-container textarea:focus {
+    border-color: var(--accent-color);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.lib-item-notes {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-style: italic;
+    margin: 4px 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
 .config-alert {
@@ -318,9 +355,15 @@ footer {
 .setting-group {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
+    margin-bottom: 2rem;
 }
 
+.setting-item {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
 .setting-group h3 {
     font-size: 1rem;
     color: var(--text-secondary);
@@ -357,6 +400,23 @@ footer {
 
 .btn-primary:hover {
     filter: brightness(1.1);
+    transform: translateY(-1px);
+}
+
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    border: 1px solid var(--glass-border);
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--accent-color);
     transform: translateY(-1px);
 }
 
@@ -576,6 +636,36 @@ footer {
     transform: translateX(-4px);
 }
 
+.lib-item-delete {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    padding: 6px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 0.3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5;
+}
+
+.library-item:hover .lib-item-delete {
+    opacity: 0.7;
+}
+
+.lib-item-delete:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger);
+    opacity: 1 !important;
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.1);
+}
+
 .lib-item-header {
     display: flex;
     align-items: center;
@@ -615,6 +705,7 @@ footer {
 .lib-item-info {
     flex: 1;
     min-width: 0;
+    padding-right: 40px; /* Space reserved for the trash icon */
 }
 
 .lib-item-info h4 {
@@ -1057,4 +1148,9 @@ footer {
     border-radius: 24px;
     width: 90%;
     animation: modalSlideUp 0.3s ease;
+}
+
+@keyframes modalSlideUp {
+    from { opacity: 0; transform: translateY(50px); }
+    to { opacity: 1; transform: translateY(0); }
 }

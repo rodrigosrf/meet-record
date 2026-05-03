@@ -23,6 +23,14 @@ const summaryModal = document.getElementById('summaryModal');
 const closeSummaryBtn = document.getElementById('closeSummaryBtn');
 const summaryContent = document.getElementById('summaryContent');
 const summaryTitle = document.getElementById('summaryTitle');
+const notesContainer = document.getElementById('notesContainer');
+const meetingNotes = document.getElementById('meetingNotes');
+
+// Audio Context for Visualizer
+let audioCtx;
+let analyser;
+let dataArray;
+let animationId;
 
 let mediaRecorder;
 let recordedChunks = [];
@@ -30,6 +38,7 @@ let isRecording = false;
 let isManualRecording = false;
 let startTime;
 let timerInterval;
+let screenshotInterval;
 let currentMeetingName = "";
 let config = {};
 let activeTranscriptions = 0;
@@ -39,6 +48,8 @@ let lastStoppedMeetingName = "";
 let allVideos = [];
 let currentFilter = 'all';
 let searchQuery = '';
+let currentMeetingFolder = "";
+let lastScreenshotData = null;
 
 // Initialize
 async function init() {
@@ -124,6 +135,19 @@ async function init() {
             stopRecording(true);
         }
     });
+
+    window.electronAPI.onTriggerManualScreenshot(() => {
+        if (isRecording) {
+            captureScreenshot(true);
+            
+            // Show notification for feedback when app is hidden
+            const n = new Notification("Meet Record", {
+                body: "Print manual capturado!",
+                silent: true
+            });
+            setTimeout(() => n.close(), 2000);
+        }
+    });
 }
 
 async function toggleLibrary() {
@@ -174,11 +198,15 @@ async function renderLibrary(skipFetch = false) {
             const order = groups[dateLabel].length - index;
 
             item.innerHTML = `
+                <button class="lib-item-delete" onclick="deleteRecording('${rec.path.replace(/\\/g, '\\\\')}')" title="Excluir Gravação">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                </button>
                 <div class="lib-item-header">
                     <div class="lib-item-order">${order}</div>
                     <div class="lib-item-info">
                         <h4>${rec.name}</h4>
                         <span>${dateStr}</span>
+                        ${rec.metadata && rec.metadata.note ? `<p class="lib-item-notes">${rec.metadata.note}</p>` : ''}
                     </div>
                 </div>
                 <div class="lib-item-actions">
@@ -287,6 +315,12 @@ async function handleMeetingDetected(title) {
 }
 
 async function startRecording(sourceId) {
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
+    const safeTitle = currentMeetingName.replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, '_');
+    currentMeetingFolder = `${timestamp}_${safeTitle}`;
+    lastScreenshotData = null; // Reset for new meeting
+
     try {
         const constraints = {
             audio: {
@@ -304,6 +338,18 @@ async function startRecording(sourceId) {
 
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         
+        // Setup Visualizer
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioCtx.createAnalyser();
+        const source = audioCtx.createMediaStreamSource(stream);
+        source.connect(analyser);
+        analyser.fftSize = 64;
+        const bufferLength = analyser.frequencyBinCount;
+        dataArray = new Uint8Array(bufferLength);
+
+        // Start animation loop
+        drawVisualizer();
+
         // Use only audio tracks for recording
         const audioStream = new MediaStream(stream.getAudioTracks());
 
@@ -333,6 +379,19 @@ async function startRecording(sourceId) {
         startTime = Date.now();
         timerInterval = setInterval(updateTimer, 1000);
         
+        // Start Screenshot Loop
+        startScreenshotLoop(stream);
+        
+        // Show Notes and Notification
+        notesContainer.classList.remove('hidden');
+        meetingNotes.value = "";
+        
+        const n = new Notification("Meet Record", {
+            body: `Gravação Iniciada: ${currentMeetingName}`,
+            silent: true
+        });
+        setTimeout(() => n.close(), 3000);
+        
     } catch (err) {
         console.error("Erro ao iniciar gravação:", err);
         statusLabel.textContent = "Erro ao gravar";
@@ -360,6 +419,45 @@ function stopRecording(isManual = false) {
         startBtn.classList.remove('hidden');
         
         clearInterval(timerInterval);
+        clearInterval(screenshotInterval);
+        
+        // Cleanup screenshot video
+        const video = document.getElementById('screenshotVideo');
+        if (video) {
+            video.srcObject = null;
+            video.remove();
+        }
+        globalStream = null;
+        
+        // Hide Notes
+        notesContainer.classList.add('hidden');
+
+        // Stop visualizer
+        cancelAnimationFrame(animationId);
+        resetVisualizer();
+    }
+}
+
+function drawVisualizer() {
+    animationId = requestAnimationFrame(drawVisualizer);
+    analyser.getByteFrequencyData(dataArray);
+
+    for (let i = 1; i <= 8; i++) {
+        const bar = document.getElementById(`bar${i}`);
+        if (bar) {
+            // Use frequency data to set height (scaled for UI)
+            const index = Math.floor(i * (dataArray.length / 8)) - 1;
+            const val = dataArray[index];
+            const height = Math.max(10, (val / 255) * 35);
+            bar.style.height = `${height}px`;
+        }
+    }
+}
+
+function resetVisualizer() {
+    for (let i = 1; i <= 8; i++) {
+        const bar = document.getElementById(`bar${i}`);
+        if (bar) bar.style.height = `10px`;
     }
 }
 
@@ -369,23 +467,56 @@ async function saveRecording() {
     
     let fileName = "";
     const now = new Date();
-    
-    const timestamp = now.toISOString().replace(/[:.]/g, '-');
+    const timestamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
+    const safeTitle = currentMeetingName.replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, '_');
     
     if (isManualRecording) {
         fileName = `${timestamp}_grav_manual.webm`;
     } else {
-        const safeTitle = currentMeetingName.replace(/[<>:"/\\|?*]/g, '');
         fileName = `${timestamp}_${safeTitle}.webm`;
     }
+
+    // Short recording check (Auto-delete)
+    const duration = Date.now() - startTime;
+    if (duration < 60000) { // Less than 1 minute
+        console.log("Recording too short, discarding...");
+        
+        // Discard screenshots as well
+        if (currentMeetingFolder) {
+            window.electronAPI.discardMeetingScreenshots(currentMeetingFolder);
+        }
+
+        statusLabel.textContent = "Aguardando Reunião...";
+        meetingTitle.textContent = "Gravação descartada (muito curta)";
+        recordedChunks = [];
+        isManualRecording = false;
+        
+        const n = new Notification("Meet Record", {
+            body: "Gravação e prints descartados automaticamente (< 1 min).",
+        });
+        setTimeout(() => n.close(), 3000);
+        return;
+    }
+
+    const metadata = {
+        title: currentMeetingName,
+        date: now.toISOString(),
+        note: meetingNotes.value,
+        duration: duration
+    };
     
-    const result = await window.electronAPI.saveFile({ buffer, fileName });
+    const result = await window.electronAPI.saveFile({ buffer, fileName, metadata });
     
     if (result.success) {
         statusLabel.textContent = "Aguardando Reunião...";
         meetingTitle.textContent = "Nenhuma reunião detectada";
         meetingTime.textContent = "00:00:00"; // Reset time display
         renderLibrary();
+
+        const n = new Notification("Meet Record", {
+            body: "Gravação salva com sucesso!",
+        });
+        setTimeout(() => n.close(), 3000);
     } else {
         statusLabel.textContent = "Erro ao salvar";
         alert(`Erro: ${result.error}`);
@@ -403,6 +534,84 @@ function updateTimer() {
     
     meetingTime.textContent = 
         `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+async function captureScreenshot(force = false) {
+    if (!isRecording || !globalStream) return;
+
+    try {
+        const video = document.getElementById('screenshotVideo');
+        if (!video) return;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        if (canvas.width === 0 || canvas.height === 0) return;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Smart Capture check (skip if force=true)
+        if (!force && config.smartCapture !== false) {
+            const compareCanvas = document.createElement('canvas');
+            compareCanvas.width = 32;
+            compareCanvas.height = 32;
+            const cCtx = compareCanvas.getContext('2d');
+            cCtx.drawImage(canvas, 0, 0, 32, 32);
+            const currentData = cCtx.getImageData(0, 0, 32, 32).data;
+
+            if (lastScreenshotData) {
+                let diff = 0;
+                for (let i = 0; i < currentData.length; i += 4) {
+                    diff += Math.abs(currentData[i] - lastScreenshotData[i]);
+                    diff += Math.abs(currentData[i+1] - lastScreenshotData[i+1]);
+                    diff += Math.abs(currentData[i+2] - lastScreenshotData[i+2]);
+                }
+                const avgDiff = diff / (32 * 32 * 3);
+                if (avgDiff < 5) return; // Skip if too similar
+            }
+            lastScreenshotData = currentData;
+        }
+        
+        canvas.toBlob(async (blob) => {
+            if (!blob) return;
+            const buffer = new Uint8Array(await blob.arrayBuffer());
+            const now = new Date();
+            const timestamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}`;
+            const fileName = force ? `manual_screenshot_${timestamp}.jpg` : `screenshot_${timestamp}.jpg`;
+            
+            await window.electronAPI.saveScreenshot({ 
+                buffer, 
+                fileName, 
+                folderName: currentMeetingFolder 
+            });
+        }, 'image/jpeg', 0.6);
+    } catch (err) {
+        console.error("Screenshot capture error:", err);
+    }
+}
+
+let globalStream = null;
+
+async function startScreenshotLoop(stream) {
+    globalStream = stream;
+    const video = document.createElement('video');
+    video.id = 'screenshotVideo';
+    video.srcObject = stream;
+    video.muted = true;
+    video.style.display = 'none';
+    document.body.appendChild(video);
+    
+    video.onloadedmetadata = () => {
+        video.play();
+        
+        const intervalMs = (config.screenshotInterval || 60) * 1000;
+        
+        screenshotInterval = setInterval(async () => {
+            captureScreenshot(false);
+        }, intervalMs);
+    };
 }
 
 let playbackAudio = null;
@@ -517,6 +726,18 @@ function stopPlayback() {
     pauseIcon.classList.add('hidden');
 }
 
+async function deleteRecording(filePath) {
+    if (confirm("Tem certeza que deseja excluir esta gravação? Esta ação não pode ser desfeita.")) {
+        const result = await window.electronAPI.deleteFile(filePath);
+        if (result.success) {
+            renderLibrary();
+        } else {
+            alert(`Erro ao excluir: ${result.error}`);
+        }
+    }
+}
+
 window.openRecording = openRecording;
+window.deleteRecording = deleteRecording;
 
 init();
