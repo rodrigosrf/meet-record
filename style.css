@@ -67,6 +67,12 @@ header {
     animation: pulse 1.5s infinite;
 }
 
+.recording-dot.paused {
+    background-color: #f59e0b;
+    box-shadow: 0 0 10px #f59e0b;
+    animation: none;
+}
+
 .recording-dot.processing {
     background-color: #f59e0b; /* Amber/Yellow */
     box-shadow: 0 0 10px #f59e0b;
@@ -436,6 +442,24 @@ footer {
     box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
 }
 
+.recording-buttons {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+}
+
+.recording-buttons .btn-secondary {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.recording-buttons .btn-danger {
+    flex: 1;
+}
+
 .hidden {
     display: none !important;
 }
@@ -580,7 +604,7 @@ footer {
     position: fixed;
     top: 0;
     right: -100%;
-    width: 400px;
+    width: 600px;
     height: 100vh;
     background: var(--bg-color);
     border-left: 1px solid var(--glass-border);
@@ -614,26 +638,41 @@ footer {
     padding: 1.5rem;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 2rem;
+}
+
+.date-group {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-top: 12px;
+}
+
+.date-group-header {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--glass-border);
 }
 
 .library-item {
     background: var(--card-bg);
     border: 1px solid var(--glass-border);
-    padding: 1rem;
-    border-radius: 12px;
+    border-radius: 16px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    transition: all 0.2s ease;
-    position: relative; /* Added for absolute positioning of order badge */
-    margin-top: 8px; /* Added space for the badge overflow */
-    margin-left: 8px;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
 }
 
 .library-item:hover {
     border-color: var(--accent-color);
-    transform: translateX(-4px);
+    transform: translateY(-4px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
 }
 
 .lib-item-delete {
@@ -672,27 +711,50 @@ footer {
     gap: 12px;
 }
 
-.lib-item-order {
-    position: absolute;
-    top: -10px;
-    left: -10px;
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    background: rgba(56, 189, 248, 0.2);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    color: var(--accent-color);
-    border: 1px solid rgba(56, 189, 248, 0.4);
+.lib-item-thumbnail {
+    width: 100%;
+    height: 120px;
+    background: rgba(255, 255, 255, 0.03);
+    overflow: hidden;
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.75rem;
+}
+
+.lib-item-thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.5s ease;
+}
+
+.library-item:hover .lib-item-thumbnail img {
+    transform: scale(1.1);
+}
+
+.lib-item-thumbnail .no-thumb {
+    opacity: 0.2;
+    color: var(--text-secondary);
+}
+
+.lib-item-order {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(15, 23, 42, 0.8);
+    backdrop-filter: blur(4px);
+    color: var(--accent-color);
+    border: 1px solid var(--accent-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
     font-weight: 700;
-    flex-shrink: 0;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2), inset 0 0 8px rgba(56, 189, 248, 0.1);
-    z-index: 2;
-    transition: all 0.3s ease;
+    z-index: 10;
 }
 
 .library-item:hover .lib-item-order {
@@ -703,31 +765,33 @@ footer {
 }
 
 .lib-item-info {
-    flex: 1;
-    min-width: 0;
-    padding-right: 40px; /* Space reserved for the trash icon */
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .lib-item-info h4 {
     font-size: 0.875rem;
     font-weight: 600;
-    margin-bottom: 2px;
-    word-break: break-all;
+    margin: 0;
+    color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 .lib-item-info span {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     color: var(--text-secondary);
 }
 
 .lib-item-actions {
+    padding: 8px 12px 12px 12px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-top: 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .badge {

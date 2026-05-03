@@ -248,6 +248,27 @@ ipcMain.handle('delete-file', async (event, filePath) => {
     }
 });
 
+ipcMain.handle('get-recording-thumbnail', async (event, folderName) => {
+    const outputDir = store.get('outputDirectory');
+    if (!outputDir || !folderName) return null;
+
+    const imagesDir = path.join(outputDir, 'images', folderName);
+    try {
+        if (fs.existsSync(imagesDir)) {
+            const files = fs.readdirSync(imagesDir);
+            const firstImage = files.find(f => f.endsWith('.jpg') || f.endsWith('.png'));
+            if (firstImage) {
+                const fullPath = path.join(imagesDir, firstImage);
+                const buffer = fs.readFileSync(fullPath);
+                return { success: true, buffer: new Uint8Array(buffer) };
+            }
+        }
+    } catch (error) {
+        console.error('Error fetching thumbnail:', error);
+    }
+    return null;
+});
+
 ipcMain.handle('get-library-videos', async () => {
     const outputDir = store.get('outputDirectory');
     if (!outputDir || !fs.existsSync(outputDir)) return [];

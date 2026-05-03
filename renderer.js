@@ -9,6 +9,10 @@ const configAlert = document.getElementById('configAlert');
 
 const stopBtn = document.getElementById('stopBtn');
 const startBtn = document.getElementById('startBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const recordingButtons = document.getElementById('recordingButtons');
+const pauseRecIcon = document.getElementById('pauseRecIcon');
+const resumeRecIcon = document.getElementById('resumeRecIcon');
 
 // New Transcription UI Elements
 const transcriptionContainer = document.getElementById('transcriptionContainer');
@@ -39,6 +43,9 @@ let isManualRecording = false;
 let startTime;
 let timerInterval;
 let screenshotInterval;
+let isPaused = false;
+let totalPausedTime = 0;
+let lastPauseStart = 0;
 let currentMeetingName = "";
 let config = {};
 let activeTranscriptions = 0;
@@ -69,6 +76,10 @@ async function init() {
 
     startBtn.addEventListener('click', () => {
         handleManualStart();
+    });
+
+    pauseBtn.addEventListener('click', () => {
+        togglePause();
     });
 
     libraryBtn.addEventListener('click', () => {
@@ -178,7 +189,7 @@ async function renderLibrary(skipFetch = false) {
     const groups = groupVideosByDate(filtered);
     libraryContent.innerHTML = '';
     
-    Object.keys(groups).forEach(dateLabel => {
+    for (const dateLabel of Object.keys(groups)) {
         const groupHeader = document.createElement('div');
         groupHeader.className = 'date-group-header';
         groupHeader.textContent = dateLabel;
@@ -187,7 +198,7 @@ async function renderLibrary(skipFetch = false) {
         const groupContainer = document.createElement('div');
         groupContainer.className = 'date-group';
         
-        groups[dateLabel].forEach((rec, index) => {
+        for (const [index, rec] of groups[dateLabel].entries()) {
             const item = document.createElement('div');
             item.className = 'library-item';
             
@@ -197,17 +208,36 @@ async function renderLibrary(skipFetch = false) {
 
             const order = groups[dateLabel].length - index;
 
+            // Thumbnail Logic
+            let thumbnailHtml = `
+                <div class="lib-item-thumbnail">
+                    <div class="no-thumb">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                    </div>
+                </div>`;
+
+            if (rec.metadata && rec.metadata.folderName) {
+                const thumbResult = await window.electronAPI.getRecordingThumbnail(rec.metadata.folderName);
+                if (thumbResult && thumbResult.success) {
+                    const blob = new Blob([thumbResult.buffer], { type: 'image/jpeg' });
+                    const thumbUrl = URL.createObjectURL(blob);
+                    thumbnailHtml = `
+                        <div class="lib-item-thumbnail">
+                            <img src="${thumbUrl}" alt="Thumbnail">
+                        </div>`;
+                }
+            }
+
             item.innerHTML = `
+                ${thumbnailHtml}
                 <button class="lib-item-delete" onclick="deleteRecording('${rec.path.replace(/\\/g, '\\\\')}')" title="Excluir Gravação">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                 </button>
-                <div class="lib-item-header">
-                    <div class="lib-item-order">${order}</div>
-                    <div class="lib-item-info">
-                        <h4>${rec.name}</h4>
-                        <span>${dateStr}</span>
-                        ${rec.metadata && rec.metadata.note ? `<p class="lib-item-notes">${rec.metadata.note}</p>` : ''}
-                    </div>
+                <div class="lib-item-order">${order}</div>
+                <div class="lib-item-info">
+                    <h4>${rec.name}</h4>
+                    <span>${dateStr}</span>
+                    ${rec.metadata && rec.metadata.note ? `<p class="lib-item-notes">${rec.metadata.note}</p>` : ''}
                 </div>
                 <div class="lib-item-actions">
                      <button class="btn-small" onclick="openRecording('${rec.path.replace(/\\/g, '\\\\')}')">Ouvir</button>
@@ -215,9 +245,9 @@ async function renderLibrary(skipFetch = false) {
                 </div>
             `;
             groupContainer.appendChild(item);
-        });
+        }
         libraryContent.appendChild(groupContainer);
-    });
+    }
 }
 
 function groupVideosByDate(videos) {
@@ -373,11 +403,17 @@ async function startRecording(sourceId) {
         mainCard.classList.add('recording');
         statusDot.classList.add('active');
         statusLabel.textContent = "Gravando Áudio...";
-        stopBtn.classList.remove('hidden');
-        startBtn.classList.add('hidden');
-        
         startTime = Date.now();
+        totalPausedTime = 0;
+        isPaused = false;
         timerInterval = setInterval(updateTimer, 1000);
+        
+        recordingButtons.classList.remove('hidden');
+        startBtn.classList.add('hidden');
+        pauseBtn.querySelector('span').textContent = "Pausar";
+        pauseRecIcon.classList.remove('hidden');
+        resumeRecIcon.classList.add('hidden');
+        statusDot.classList.remove('paused');
         
         // Start Screenshot Loop
         startScreenshotLoop(stream);
@@ -415,7 +451,7 @@ function stopRecording(isManual = false) {
         statusLabel.textContent = "Salvando MP3...";
         meetingTitle.textContent = "Processando arquivo";
         meetingTime.textContent = "00:00:00";
-        stopBtn.classList.add('hidden');
+        recordingButtons.classList.add('hidden');
         startBtn.classList.remove('hidden');
         
         clearInterval(timerInterval);
@@ -435,6 +471,38 @@ function stopRecording(isManual = false) {
         // Stop visualizer
         cancelAnimationFrame(animationId);
         resetVisualizer();
+    }
+}
+
+function togglePause() {
+    if (!mediaRecorder || !isRecording) return;
+
+    if (!isPaused) {
+        mediaRecorder.pause();
+        isPaused = true;
+        lastPauseStart = Date.now();
+        statusDot.classList.remove('active');
+        statusDot.classList.add('paused');
+        statusLabel.textContent = "Gravação Pausada";
+        
+        pauseBtn.querySelector('span').textContent = "Retomar";
+        pauseRecIcon.classList.add('hidden');
+        resumeRecIcon.classList.remove('hidden');
+        
+        clearInterval(screenshotInterval);
+    } else {
+        mediaRecorder.resume();
+        isPaused = false;
+        totalPausedTime += (Date.now() - lastPauseStart);
+        statusDot.classList.add('active');
+        statusDot.classList.remove('paused');
+        statusLabel.textContent = "Gravando Áudio...";
+        
+        pauseBtn.querySelector('span').textContent = "Pausar";
+        pauseRecIcon.classList.remove('hidden');
+        resumeRecIcon.classList.add('hidden');
+        
+        startScreenshotLoop(globalStream);
     }
 }
 
@@ -502,7 +570,8 @@ async function saveRecording() {
         title: currentMeetingName,
         date: now.toISOString(),
         note: meetingNotes.value,
-        duration: duration
+        duration: duration,
+        folderName: currentMeetingFolder
     };
     
     const result = await window.electronAPI.saveFile({ buffer, fileName, metadata });
@@ -527,7 +596,9 @@ async function saveRecording() {
 }
 
 function updateTimer() {
-    const elapsed = Date.now() - startTime;
+    if (isPaused) return;
+    
+    const elapsed = (Date.now() - startTime) - totalPausedTime;
     const hours = Math.floor(elapsed / 3600000);
     const minutes = Math.floor((elapsed % 3600000) / 60000);
     const seconds = Math.floor((elapsed % 60000) / 1000);
