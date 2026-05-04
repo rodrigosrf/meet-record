@@ -24,18 +24,19 @@ foreach ($win in $windows) {
         $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
         if ($process -and ($process.ProcessName -match "ms-teams|Teams")) {
             
-            # Filter out known non-meeting windows early
-            if ($name -match "Chat \||Calendar \||Microsoft Teams|Notificações|Notifications") {
-                continue
-            }
-
-            # Strategy: Search for specific meeting indicators in the first few levels of the tree
-            # This is much faster than searching all descendants.
             $isMeeting = $false
             
             # 1. Check if the window title suggests a meeting (highly likely)
             if ($name -match "Reunião|Meeting|Call|Chamada|Conferência") {
                 $isMeeting = $true
+            }
+
+            # If not identified by title, check if we should exclude it or do a deep check
+            if (-not $isMeeting) {
+                # Filter out known non-meeting windows early
+                if ($name -match "Chat \||Calendar \||Microsoft Teams|Notificações|Notifications") {
+                    continue
+                }
             }
 
             # 2. Deep check only if not already confirmed
