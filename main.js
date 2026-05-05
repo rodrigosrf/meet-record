@@ -632,7 +632,11 @@ function startDetectionLoop() {
             log(`Janelas potenciais encontradas: ${potentialMeetingWindows.length}`, 'debug');
             potentialMeetingWindows.forEach(w => log(`Verificando janela: "${w.name}"`, 'debug'));
 
-            const scriptPath = path.join(__dirname, 'detectMeetings.ps1');
+            let scriptPath = path.join(__dirname, 'detectMeetings.ps1');
+            
+            // If running from asar, use the unpacked version
+            scriptPath = scriptPath.replace(/\bapp\.asar\b/g, 'app.asar.unpacked');
+
             const command = `powershell -NoProfile -ExecutionPolicy Bypass -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; & '${scriptPath}'"`;
 
             exec(command, { encoding: 'utf8' }, (error, stdout, stderr) => {

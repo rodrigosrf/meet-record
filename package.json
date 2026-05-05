@@ -16,6 +16,10 @@
     "directories": {
       "output": "dist"
     },
+    "asar": true,
+    "asarUnpack": [
+      "detectMeetings.ps1"
+    ],
     "win": {
       "target": [
         "nsis"
