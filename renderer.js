@@ -30,6 +30,11 @@ const summaryTitle = document.getElementById('summaryTitle');
 const notesContainer = document.getElementById('notesContainer');
 const meetingNotes = document.getElementById('meetingNotes');
 const recordVideoCheckbox = document.getElementById('recordVideoCheckbox');
+const logsBtn = document.getElementById('logsBtn');
+const logsPanel = document.getElementById('logsPanel');
+const closeLogsBtn = document.getElementById('closeLogsBtn');
+const logsContent = document.getElementById('logsContent');
+const autoRecordCheckbox = document.getElementById('autoRecordCheckbox');
 
 // Audio Context for Visualizer
 let audioCtx;
@@ -68,6 +73,19 @@ async function init() {
         configAlert.classList.add('hidden');
     }
 
+    if (config.autoRecord !== undefined) {
+        autoRecordCheckbox.checked = config.autoRecord;
+        const offLabel = document.querySelector('.mode-label.auto-off-mode');
+        const onLabel = document.querySelector('.mode-label.auto-on-mode');
+        if (config.autoRecord) {
+            offLabel.classList.remove('active');
+            onLabel.classList.add('active');
+        } else {
+            offLabel.classList.add('active');
+            onLabel.classList.remove('active');
+        }
+    }
+
     settingsBtn.addEventListener('click', () => {
         window.electronAPI.openSettings();
     });
@@ -96,6 +114,14 @@ async function init() {
         window.electronAPI.openOutputDirectory();
     });
 
+    logsBtn.addEventListener('click', () => {
+        toggleLogs();
+    });
+
+    closeLogsBtn.addEventListener('click', () => {
+        logsPanel.classList.remove('active');
+    });
+
     // Library Search
     const librarySearch = document.getElementById('librarySearch');
     librarySearch.addEventListener('input', (e) => {
@@ -109,6 +135,8 @@ async function init() {
         }
 
         if (!isRecording) {
+            if (!config.autoRecord) return; // Skip automatic start if disabled
+            
             const availableMeetings = titles.filter(t => t !== lastStoppedMeetingName);
             if (availableMeetings.length > 0) {
                 const bestMatch = availableMeetings.find(t => t.includes('Reuni') || t.includes('Meeting')) || availableMeetings[0];
@@ -134,6 +162,18 @@ async function init() {
         if (config.outputDirectory) {
             savePathDisplay.textContent = config.outputDirectory;
             configAlert.classList.add('hidden');
+        }
+        if (config.autoRecord !== undefined) {
+            autoRecordCheckbox.checked = config.autoRecord;
+            const offLabel = document.querySelector('.mode-label.auto-off-mode');
+            const onLabel = document.querySelector('.mode-label.auto-on-mode');
+            if (config.autoRecord) {
+                offLabel.classList.remove('active');
+                onLabel.classList.add('active');
+            } else {
+                offLabel.classList.add('active');
+                onLabel.classList.remove('active');
+            }
         }
     });
 
@@ -174,16 +214,68 @@ async function init() {
         }
     });
 
+    autoRecordCheckbox.addEventListener('change', () => {
+        const offLabel = document.querySelector('.mode-label.auto-off-mode');
+        const onLabel = document.querySelector('.mode-label.auto-on-mode');
+        const isAuto = autoRecordCheckbox.checked;
+        
+        if (isAuto) {
+            offLabel.classList.remove('active');
+            onLabel.classList.add('active');
+        } else {
+            offLabel.classList.add('active');
+            onLabel.classList.remove('active');
+        }
+        
+        window.electronAPI.updateConfig({ autoRecord: isAuto });
+    });
+
     window.electronAPI.onTogglePause(() => {
         togglePause();
     });
+
+    window.electronAPI.onNewLog((log) => {
+        addLogToUI(log);
+    });
+
+    // Initial Logs Fetch
+    const initialLogs = await window.electronAPI.getLogs();
+    initialLogs.forEach(log => addLogToUI(log, false));
 }
 
 async function toggleLibrary() {
+    logsPanel.classList.remove('active');
     libraryPanel.classList.toggle('active');
     if (libraryPanel.classList.contains('active')) {
         renderLibrary();
     }
+}
+
+async function toggleLogs() {
+    libraryPanel.classList.remove('active');
+    logsPanel.classList.toggle('active');
+}
+
+function addLogToUI(log, scroll = true) {
+    const entry = document.createElement('div');
+    entry.className = `log-entry ${log.type}`;
+    
+    entry.innerHTML = `
+        <div class="log-header">
+            <span class="log-time">${log.timestamp}</span>
+            <span class="log-type-tag">${log.type}</span>
+        </div>
+        <div class="log-msg">${log.message}</div>
+    `;
+    
+    logsContent.appendChild(entry);
+    
+    // Keep only last 100 in UI too
+    if (logsContent.children.length > 100) {
+        logsContent.removeChild(logsContent.firstChild);
+    }
+    
+    // Automatic scroll disabled per user request
 }
 
 async function renderLibrary(skipFetch = false) {

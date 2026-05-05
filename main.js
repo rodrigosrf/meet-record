@@ -10,7 +10,8 @@ const __dirname = path.dirname(__filename);
 
 const store = new Store({
     defaults: {
-        // Automatic screenshots removed - interval and smartCapture no longer needed
+        outputDirectory: '',
+        autoRecord: true
     }
 });
 
@@ -23,6 +24,28 @@ const transcriptionQueue = [];
 let isProcessingQueue = false;
 let tray = null;
 let isQuitting = false;
+
+// Logging System
+const logs = [];
+const MAX_LOGS = 100;
+
+function log(message, type = 'info') {
+    const now = new Date();
+    const entry = {
+        timestamp: now.toLocaleTimeString('pt-BR'),
+        fullTimestamp: now.toISOString(),
+        message,
+        type
+    };
+    logs.push(entry);
+    if (logs.length > MAX_LOGS) logs.shift();
+    
+    // File saving removed per user request
+    
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('new-log', entry);
+    }
+}
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -203,17 +226,26 @@ ipcMain.handle('select-directory', async () => {
 
 ipcMain.handle('get-config', () => {
     return {
-        outputDirectory: store.get('outputDirectory')
+        outputDirectory: store.get('outputDirectory'),
+        autoRecord: store.get('autoRecord')
     };
+});
+
+ipcMain.handle('get-logs', () => {
+    return logs;
 });
 
 ipcMain.handle('update-config', (event, newConfig) => {
     if (newConfig.outputDirectory !== undefined) {
         store.set('outputDirectory', newConfig.outputDirectory);
     }
+    if (newConfig.autoRecord !== undefined) {
+        store.set('autoRecord', newConfig.autoRecord);
+    }
     
     const updatedConfig = {
-        outputDirectory: store.get('outputDirectory')
+        outputDirectory: store.get('outputDirectory'),
+        autoRecord: store.get('autoRecord')
     };
     
     mainWindow.webContents.send('config-updated', updatedConfig);
@@ -570,6 +602,7 @@ function cleanupOldImages() {
 }
 
 function startDetectionLoop() {
+    log('Iniciando loop de detecção automática', 'debug');
     detectionInterval = setInterval(async () => {
         try {
             const sources = await desktopCapturer.getSources({ 
@@ -595,41 +628,74 @@ function startDetectionLoop() {
                 return;
             }
 
+            log(`Janelas potenciais encontradas: ${potentialMeetingWindows.length}`, 'debug');
+            potentialMeetingWindows.forEach(w => log(`Verificando janela: "${w.name}"`, 'debug'));
+
             const scriptPath = path.join(__dirname, 'detectMeetings.ps1');
-            // Use -NoProfile and -ExecutionPolicy Bypass for faster/safer execution
-            // We use [Console]::OutputEncoding to match the script's setting
             const command = `powershell -NoProfile -ExecutionPolicy Bypass -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; & '${scriptPath}'"`;
 
             exec(command, { encoding: 'utf8' }, (error, stdout, stderr) => {
                 if (error) {
-                    console.error('PowerShell error:', error);
+                    log(`Erro ao executar PowerShell: ${error.message}`, 'error');
                     return;
+                }
+                if (stderr) {
+                    log(`PowerShell Stderr: ${stderr}`, 'warn');
                 }
 
                 try {
-                    // Improved regex to find the JSON array even if there's other output
-                    const jsonMatch = stdout.match(/\[.*\]/s);
-                    if (!jsonMatch) {
+                    // Try to find a JSON array first
+                    let jsonMatch = stdout.match(/\[.*\]/s);
+                    let meetingTitles = [];
+                    
+                    if (jsonMatch) {
+                        try {
+                            meetingTitles = JSON.parse(jsonMatch[0]);
+                        } catch (e) {
+                            log(`Erro ao parsear JSON: ${e.message}`, 'error');
+                        }
+                    } else if (stdout.trim()) {
+                        // Fallback: if there's any non-empty output, try to parse it as a single string
+                        try {
+                            const trimmed = stdout.trim();
+                            if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+                                meetingTitles = [JSON.parse(trimmed)];
+                            } else if (!trimmed.includes('\n')) {
+                                // Just a raw string
+                                meetingTitles = [trimmed];
+                            }
+                        } catch (e) {
+                            log(`Falha ao processar saída secundária: ${stdout}`, 'debug');
+                        }
+                    }
+
+                    if (meetingTitles.length === 0) {
+                        log('Nenhuma reunião confirmada pelo script PowerShell', 'debug');
                         if (mainWindow && !mainWindow.isDestroyed()) {
                             mainWindow.webContents.send('no-meeting-detected');
                         }
                         return;
                     }
 
-                    const meetingTitles = JSON.parse(jsonMatch[0]);
                     const titlesArray = Array.isArray(meetingTitles) ? meetingTitles : [meetingTitles];
 
-                    if (titlesArray.length > 0 && mainWindow && !mainWindow.isDestroyed()) {
-                        mainWindow.webContents.send('meeting-detected', titlesArray);
-                    } else if (mainWindow && !mainWindow.isDestroyed()) {
-                        mainWindow.webContents.send('no-meeting-detected');
+                    if (titlesArray.length > 0) {
+                        log(`Reunião detectada: ${titlesArray.join(', ')}`, 'info');
+                        if (mainWindow && !mainWindow.isDestroyed()) {
+                            mainWindow.webContents.send('meeting-detected', titlesArray);
+                        }
+                    } else {
+                        if (mainWindow && !mainWindow.isDestroyed()) {
+                            mainWindow.webContents.send('no-meeting-detected');
+                        }
                     }
                 } catch (parseError) {
-                    console.error('Error parsing PowerShell output:', parseError, stdout);
+                    log(`Erro ao processar saída do PowerShell: ${parseError.message}`, 'error');
+                    log(`Saída bruta: ${stdout}`, 'debug');
                 }
             });
         } catch (error) {
-            console.error('Detection loop error:', error);
+            log(`Erro no loop de detecção: ${error.message}`, 'error');
         }
     }, 5000);
 }
