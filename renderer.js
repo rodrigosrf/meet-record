@@ -49,15 +49,10 @@ let isStarting = false;
 let isManualRecording = false;
 let startTime;
 let timerInterval;
-let isPaused = false;
-let totalPausedTime = 0;
-let lastPauseStart = 0;
-let currentMeetingName = "";
-let config = {};
-let activeTranscriptions = 0;
-let inProgressTranscriptions = new Set();
-let queuedTranscriptions = new Set();
-let lastStoppedMeetingName = "";
+let currentMeetingHandle = "";
+let lastDetectedMeetings = []; // Store all meetings from last cycle
+let manuallyStoppedMeetings = new Map(); // Handle -> lastSeenTimestamp
+const STOPPED_MEETING_COOLDOWN = 2 * 60 * 1000; // 2 minutes absence to clear from ignore list
 let allVideos = [];
 let currentFilter = 'all';
 let searchQuery = '';
@@ -129,29 +124,48 @@ async function init() {
         renderLibrary(true);
     });
 
-    window.electronAPI.onMeetingDetected(async (titles) => {
-        if (lastStoppedMeetingName && !titles.includes(lastStoppedMeetingName)) {
-            lastStoppedMeetingName = "";
+    window.electronAPI.onMeetingDetected(async (meetings) => {
+        const now = Date.now();
+        lastDetectedMeetings = meetings;
+        
+        // Update last seen timestamp for any ignored meeting that is still present
+        for (const m of meetings) {
+            if (manuallyStoppedMeetings.has(m.handle)) {
+                manuallyStoppedMeetings.set(m.handle, now);
+            }
+        }
+
+        // Clean up old ignored meetings (not seen for > COOLDOWN)
+        for (const [handle, lastSeen] of manuallyStoppedMeetings.entries()) {
+            if (now - lastSeen > STOPPED_MEETING_COOLDOWN) {
+                manuallyStoppedMeetings.delete(handle);
+            }
         }
 
         if (!isRecording) {
             if (!config.autoRecord) return; // Skip automatic start if disabled
             
-            const availableMeetings = titles.filter(t => t !== lastStoppedMeetingName);
+            // Filter out meetings that were manually stopped and are still active
+            const availableMeetings = meetings.filter(m => !manuallyStoppedMeetings.has(m.handle));
+            
             if (availableMeetings.length > 0) {
-                const bestMatch = availableMeetings.find(t => t.includes('Reuni') || t.includes('Meeting')) || availableMeetings[0];
-                handleMeetingDetected(bestMatch);
+                const bestMatch = availableMeetings.find(m => m.title.includes('Reuni') || m.title.includes('Meeting')) || availableMeetings[0];
+                handleMeetingDetected(bestMatch.title, bestMatch.handle);
             }
         } else if (!isManualRecording) {
-            const stillExists = titles.some(t => t === currentMeetingName);
-            if (!stillExists) {
+            const currentMeeting = meetings.find(m => m.handle === currentMeetingHandle);
+            if (!currentMeeting) {
                 stopRecording();
+            } else if (currentMeeting.title !== currentMeetingName) {
+                // Title changed but same handle, just update the UI
+                currentMeetingName = currentMeeting.title;
+                meetingTitle.textContent = currentMeetingName;
             }
         }
     });
 
     window.electronAPI.onNoMeetingDetected(() => {
-        lastStoppedMeetingName = "";
+        // We don't clear manuallyStoppedMeetings here immediately to handle detection gaps
         if (isRecording && !isManualRecording) {
             stopRecording();
         }
@@ -427,14 +441,15 @@ async function handleManualStart() {
     const screenSource = sources.find(s => s.id.startsWith('screen:')) || sources[0];
     if (screenSource) {
         currentMeetingName = "Gravação Manual";
+        currentMeetingHandle = "manual_" + Date.now();
         meetingTitle.textContent = "Gravação Manual (Tela)";
-        startRecording(screenSource.id, hasVideo);
+        startRecording(screenSource.id, "", hasVideo);
     } else {
         statusLabel.textContent = "Nenhuma fonte encontrada";
     }
 }
 
-async function handleMeetingDetected(title) {
+async function handleMeetingDetected(title, handle) {
     if (isRecording || isStarting) return;
 
     // Stop playback if active
@@ -445,6 +460,7 @@ async function handleMeetingDetected(title) {
     isStarting = true;
     isManualRecording = false;
     currentMeetingName = title;
+    currentMeetingHandle = handle;
     meetingTitle.textContent = title;
 
     if (!config.outputDirectory) {
@@ -456,19 +472,21 @@ async function handleMeetingDetected(title) {
     configAlert.classList.add('hidden');
     
     const sources = await window.electronAPI.getSources();
+    
+    // Try to match by name or look for Teams
     const source = sources.find(s => s.name === title) || sources.find(s => s.name.includes(title) || title.includes(s.name));
     
     if (source) {
-        startRecording(source.id);
+        startRecording(source.id, handle);
     } else {
         const teamsSource = sources.find(s => s.name.includes('Teams'));
         if (teamsSource) {
-            startRecording(teamsSource.id);
+            startRecording(teamsSource.id, handle);
         }
     }
 }
 
-async function startRecording(sourceId, hasVideo = false) {
+async function startRecording(sourceId, handle, hasVideo = false) {
     const now = new Date();
     const timestamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
     const safeTitle = currentMeetingName.replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, '_');
@@ -581,7 +599,15 @@ async function startRecording(sourceId, hasVideo = false) {
 function stopRecording(isManual = false) {
     if (mediaRecorder && isRecording) {
         if (isManual) {
-            lastStoppedMeetingName = currentMeetingName;
+            // Ignore ALL currently detected meetings when stopped manually
+            // to handle cases with multiple Teams windows for the same meeting
+            lastDetectedMeetings.forEach(m => {
+                manuallyStoppedMeetings.set(m.handle, Date.now());
+            });
+            // Also ensure the one we were recording is ignored even if not in lastDetected
+            if (currentMeetingHandle) {
+                manuallyStoppedMeetings.set(currentMeetingHandle, Date.now());
+            }
         }
         
         mediaRecorder.stop();

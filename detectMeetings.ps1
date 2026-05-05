@@ -68,7 +68,7 @@ foreach ($win in $windows) {
             }
             
             if ($isMeeting) {
-                $results += $name
+                $results += @{ title = $name; handle = $win.Current.NativeWindowHandle.ToString() }
             }
         }
     } catch {

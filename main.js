@@ -682,12 +682,13 @@ function startDetectionLoop() {
                         return;
                     }
 
-                    const titlesArray = Array.isArray(meetingTitles) ? meetingTitles : [meetingTitles];
+                    const meetingsArray = Array.isArray(meetingTitles) ? meetingTitles : [meetingTitles];
 
-                    if (titlesArray.length > 0) {
-                        log(`Reunião detectada: ${titlesArray.join(', ')}`, 'info');
+                    if (meetingsArray.length > 0) {
+                        const titles = meetingsArray.map(m => m.title).join(', ');
+                        log(`Reunião detectada: ${titles}`, 'info');
                         if (mainWindow && !mainWindow.isDestroyed()) {
-                            mainWindow.webContents.send('meeting-detected', titlesArray);
+                            mainWindow.webContents.send('meeting-detected', meetingsArray);
                         }
                     } else {
                         if (mainWindow && !mainWindow.isDestroyed()) {
