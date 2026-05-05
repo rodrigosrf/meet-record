@@ -39,6 +39,7 @@ let animationId;
 let mediaRecorder;
 let recordedChunks = [];
 let isRecording = false;
+let isStarting = false;
 let isManualRecording = false;
 let startTime;
 let timerInterval;
@@ -276,11 +277,17 @@ function groupVideosByDate(videos) {
 }
 
 async function handleManualStart() {
+    if (isRecording || isStarting) return;
+
     if (!config.outputDirectory) {
         statusLabel.textContent = "Aguardando Configuração";
         configAlert.classList.remove('hidden');
         return;
     }
+
+    isStarting = true;
+    startBtn.disabled = true;
+    startBtn.textContent = "Iniciando...";
 
     // Stop playback if active
     if (playbackAudio) {
@@ -314,11 +321,14 @@ async function handleManualStart() {
 }
 
 async function handleMeetingDetected(title) {
+    if (isRecording || isStarting) return;
+
     // Stop playback if active
     if (playbackAudio) {
         stopPlayback();
     }
 
+    isStarting = true;
     isManualRecording = false;
     currentMeetingName = title;
     meetingTitle.textContent = title;
@@ -399,6 +409,7 @@ async function startRecording(sourceId) {
 
         mediaRecorder.start();
         isRecording = true;
+        isStarting = false;
         
         mainCard.classList.add('recording');
         statusDot.classList.add('active');
@@ -406,10 +417,15 @@ async function startRecording(sourceId) {
         startTime = Date.now();
         totalPausedTime = 0;
         isPaused = false;
+        
+        if (timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(updateTimer, 1000);
         
         recordingButtons.classList.remove('hidden');
         startBtn.classList.add('hidden');
+        startBtn.disabled = false;
+        startBtn.textContent = "Iniciar Gravação Manual";
+        
         pauseBtn.querySelector('span').textContent = "Pausar";
         pauseRecIcon.classList.remove('hidden');
         resumeRecIcon.classList.add('hidden');
@@ -431,6 +447,10 @@ async function startRecording(sourceId) {
     } catch (err) {
         console.error("Erro ao iniciar gravação:", err);
         statusLabel.textContent = "Erro ao gravar";
+        isStarting = false;
+        isRecording = false;
+        startBtn.disabled = false;
+        startBtn.textContent = "Iniciar Gravação Manual";
     }
 }
 
@@ -442,6 +462,7 @@ function stopRecording(isManual = false) {
         
         mediaRecorder.stop();
         isRecording = false;
+        isStarting = false;
         
         const tracks = mediaRecorder.stream.getTracks();
         tracks.forEach(track => track.stop());
@@ -453,6 +474,8 @@ function stopRecording(isManual = false) {
         meetingTime.textContent = "00:00:00";
         recordingButtons.classList.add('hidden');
         startBtn.classList.remove('hidden');
+        startBtn.disabled = false;
+        startBtn.textContent = "Iniciar Gravação Manual";
         
         clearInterval(timerInterval);
         clearInterval(screenshotInterval);
@@ -596,7 +619,7 @@ async function saveRecording() {
 }
 
 function updateTimer() {
-    if (isPaused) return;
+    if (isPaused || !isRecording) return;
     
     const elapsed = (Date.now() - startTime) - totalPausedTime;
     const hours = Math.floor(elapsed / 3600000);
