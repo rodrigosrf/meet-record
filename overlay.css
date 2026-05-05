@@ -1,0 +1,97 @@
+:root {
+    --bg-overlay: rgba(15, 23, 42, 0.8);
+    --accent: #38bdf8;
+    --danger: #ef4444;
+    --text: #f1f5f9;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Inter', sans-serif;
+    overflow: hidden;
+    background: transparent;
+}
+
+.overlay-container {
+    background: var(--bg-overlay);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    gap: 12px;
+    color: var(--text);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+    height: 40px;
+}
+
+.drag-handle {
+    -webkit-app-region: drag;
+    cursor: grab;
+    color: rgba(255, 255, 255, 0.3);
+    display: flex;
+    align-items: center;
+}
+
+.timer-display {
+    font-family: monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+    min-width: 65px;
+}
+
+.actions {
+    display: flex;
+    gap: 8px;
+    -webkit-app-region: no-drag;
+}
+
+button {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text);
+    border-radius: 6px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+button:hover {
+    background: rgba(255, 255, 255, 0.15);
+    transform: translateY(-1px);
+}
+
+button svg {
+    opacity: 0.8;
+}
+
+.stop-btn:hover {
+    background: var(--danger);
+    border-color: var(--danger);
+}
+
+.hidden {
+    display: none;
+}
+
+/* Animations */
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+.recording-status {
+    width: 6px;
+    height: 6px;
+    background: var(--danger);
+    border-radius: 50%;
+    animation: pulse 1.5s infinite;
+}

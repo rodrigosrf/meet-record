@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, shell, Tray, Menu, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, shell, Tray, Menu, nativeImage, screen } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
@@ -17,6 +17,7 @@ const store = new Store({
 
 let mainWindow;
 let settingsWindow;
+let overlayWindow;
 let detectionInterval;
 const activeProcesses = new Map();
 const transcriptionQueue = [];
@@ -131,6 +132,36 @@ function createSettingsWindow() {
     });
 }
 
+function createOverlayWindow() {
+    if (overlayWindow) return;
+
+    overlayWindow = new BrowserWindow({
+        width: 280,
+        height: 60,
+        frame: false,
+        transparent: true,
+        alwaysOnTop: true,
+        resizable: false,
+        skipTaskbar: true,
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            contextIsolation: true,
+            nodeIntegration: false
+        }
+    });
+
+    overlayWindow.loadFile('overlay.html');
+    
+    // Position it at the bottom right of the primary screen
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.workAreaSize;
+    overlayWindow.setPosition(width - 300, height - 80);
+
+    overlayWindow.on('closed', () => {
+        overlayWindow = null;
+    });
+}
+
 app.whenReady().then(() => {
     createWindow();
     createTray();
@@ -219,6 +250,43 @@ ipcMain.handle('open-file', async (event, filePath) => {
         return { success: true };
     }
     return { success: false, error: 'Arquivo não encontrado.' };
+});
+
+// Overlay IPC Bridge
+ipcMain.on('sync-overlay', (event, data) => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+        overlayWindow.webContents.send('overlay-update', data);
+    }
+});
+
+ipcMain.on('overlay-action', (event, action) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    switch (action) {
+        case 'print':
+            mainWindow.webContents.send('trigger-manual-screenshot');
+            break;
+        case 'pause':
+            mainWindow.webContents.send('toggle-pause');
+            break;
+        case 'stop':
+            mainWindow.webContents.send('stop-recording');
+            break;
+    }
+});
+
+ipcMain.on('show-overlay', () => {
+    if (!overlayWindow) {
+        createOverlayWindow();
+    } else {
+        overlayWindow.show();
+    }
+});
+
+ipcMain.on('hide-overlay', () => {
+    if (overlayWindow) {
+        overlayWindow.hide();
+    }
 });
 
 ipcMain.handle('get-file-buffer', async (event, filePath) => {

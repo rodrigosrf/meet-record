@@ -174,6 +174,10 @@ async function init() {
             videoLabel.classList.remove('active');
         }
     });
+
+    window.electronAPI.onTogglePause(() => {
+        togglePause();
+    });
 }
 
 async function toggleLibrary() {
@@ -468,6 +472,10 @@ async function startRecording(sourceId, hasVideo = false) {
             silent: true
         });
         setTimeout(() => n.close(), 3000);
+
+        // Show Overlay
+        window.electronAPI.showOverlay();
+        window.electronAPI.syncOverlay({ isPaused: false, timer: "00:00:00" });
         
     } catch (err) {
         console.error("Erro ao iniciar gravação:", err);
@@ -519,6 +527,9 @@ function stopRecording(isManual = false) {
         // Stop visualizer
         cancelAnimationFrame(animationId);
         resetVisualizer();
+
+        // Hide Overlay
+        window.electronAPI.hideOverlay();
     }
 }
 
@@ -552,6 +563,9 @@ function togglePause() {
         
         startScreenshotLoop(globalStream);
     }
+
+    // Sync with Overlay
+    window.electronAPI.syncOverlay({ isPaused: isPaused });
 }
 
 function drawVisualizer() {
@@ -690,6 +704,9 @@ function updateTimer() {
     
     meetingTime.textContent = 
         `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+    // Sync with Overlay
+    window.electronAPI.syncOverlay({ timer: meetingTime.textContent });
 }
 
 async function captureScreenshot(force = false) {

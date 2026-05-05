@@ -20,5 +20,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     discardMeetingScreenshots: (folderName) => ipcRenderer.invoke('discard-meeting-screenshots', folderName),
     onStartManualRecording: (callback) => ipcRenderer.on('start-manual-recording', () => callback()),
     onStopRecording: (callback) => ipcRenderer.on('stop-recording', () => callback()),
-    onTriggerManualScreenshot: (callback) => ipcRenderer.on('trigger-manual-screenshot', () => callback())
+    onTriggerManualScreenshot: (callback) => ipcRenderer.on('trigger-manual-screenshot', () => callback()),
+    
+    // Overlay Methods
+    onOverlayUpdate: (callback) => ipcRenderer.on('overlay-update', (_event, data) => callback(data)),
+    sendOverlayAction: (action) => ipcRenderer.send('overlay-action', action),
+    syncOverlay: (data) => ipcRenderer.send('sync-overlay', data),
+    showOverlay: () => ipcRenderer.send('show-overlay'),
+    hideOverlay: () => ipcRenderer.send('hide-overlay'),
+    onTogglePause: (callback) => ipcRenderer.on('toggle-pause', () => callback())
 });
