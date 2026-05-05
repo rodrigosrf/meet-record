@@ -29,6 +29,7 @@ const summaryContent = document.getElementById('summaryContent');
 const summaryTitle = document.getElementById('summaryTitle');
 const notesContainer = document.getElementById('notesContainer');
 const meetingNotes = document.getElementById('meetingNotes');
+const recordVideoCheckbox = document.getElementById('recordVideoCheckbox');
 
 // Audio Context for Visualizer
 let audioCtx;
@@ -58,6 +59,7 @@ let currentFilter = 'all';
 let searchQuery = '';
 let currentMeetingFolder = "";
 let lastScreenshotData = null;
+let isRecordingVideo = false;
 
 // Initialize
 async function init() {
@@ -160,6 +162,18 @@ async function init() {
             setTimeout(() => n.close(), 2000);
         }
     });
+
+    recordVideoCheckbox.addEventListener('change', () => {
+        const audioLabel = document.querySelector('.mode-label.audio-mode');
+        const videoLabel = document.querySelector('.mode-label.video-mode');
+        if (recordVideoCheckbox.checked) {
+            audioLabel.classList.remove('active');
+            videoLabel.classList.add('active');
+        } else {
+            audioLabel.classList.add('active');
+            videoLabel.classList.remove('active');
+        }
+    });
 }
 
 async function toggleLibrary() {
@@ -229,6 +243,10 @@ async function renderLibrary(skipFetch = false) {
                 }
             }
 
+            const isVideo = rec.path.endsWith('.webm');
+            const buttonText = isVideo ? 'Assistir' : 'Ouvir';
+            const badgeText = isVideo ? 'WEBM' : 'MP3';
+
             item.innerHTML = `
                 ${thumbnailHtml}
                 <button class="lib-item-delete" onclick="deleteRecording('${rec.path.replace(/\\/g, '\\\\')}')" title="Excluir Gravação">
@@ -241,8 +259,8 @@ async function renderLibrary(skipFetch = false) {
                     ${rec.metadata && rec.metadata.note ? `<p class="lib-item-notes">${rec.metadata.note}</p>` : ''}
                 </div>
                 <div class="lib-item-actions">
-                     <button class="btn-small" onclick="openRecording('${rec.path.replace(/\\/g, '\\\\')}')">Ouvir</button>
-                     <span class="badge badge-success">MP3</span>
+                     <button class="btn-small" onclick="openRecording('${rec.path.replace(/\\/g, '\\\\')}')">${buttonText}</button>
+                     <span class="badge badge-success">${badgeText}</span>
                 </div>
             `;
             groupContainer.appendChild(item);
@@ -288,6 +306,7 @@ async function handleManualStart() {
     isStarting = true;
     startBtn.disabled = true;
     startBtn.textContent = "Iniciando...";
+    const hasVideo = recordVideoCheckbox.checked;
 
     // Stop playback if active
     if (playbackAudio) {
@@ -306,7 +325,7 @@ async function handleManualStart() {
     if (meetingSource) {
         currentMeetingName = meetingSource.name;
         meetingTitle.textContent = meetingSource.name;
-        startRecording(meetingSource.id);
+        startRecording(meetingSource.id, hasVideo);
         return;
     }
 
@@ -314,7 +333,7 @@ async function handleManualStart() {
     if (screenSource) {
         currentMeetingName = "Gravação Manual";
         meetingTitle.textContent = "Gravação Manual (Tela)";
-        startRecording(screenSource.id);
+        startRecording(screenSource.id, hasVideo);
     } else {
         statusLabel.textContent = "Nenhuma fonte encontrada";
     }
@@ -354,12 +373,13 @@ async function handleMeetingDetected(title) {
     }
 }
 
-async function startRecording(sourceId) {
+async function startRecording(sourceId, hasVideo = false) {
     const now = new Date();
     const timestamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
     const safeTitle = currentMeetingName.replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, '_');
     currentMeetingFolder = `${timestamp}_${safeTitle}`;
     lastScreenshotData = null; // Reset for new meeting
+    isRecordingVideo = hasVideo;
 
     try {
         const constraints = {
@@ -390,12 +410,16 @@ async function startRecording(sourceId) {
         // Start animation loop
         drawVisualizer();
 
-        // Use only audio tracks for recording
-        const audioStream = new MediaStream(stream.getAudioTracks());
+        // Choose stream and mimeType
+        let mimeType = 'audio/webm;codecs=opus';
+        let streamToRecord = new MediaStream(stream.getAudioTracks());
 
-        mediaRecorder = new MediaRecorder(audioStream, { 
-            mimeType: 'audio/webm;codecs=opus' 
-        });
+        if (hasVideo) {
+            mimeType = 'video/webm;codecs=vp9,opus';
+            streamToRecord = stream;
+        }
+
+        mediaRecorder = new MediaRecorder(streamToRecord, { mimeType });
 
         mediaRecorder.ondataavailable = (e) => {
             if (e.data.size > 0) {
@@ -413,7 +437,7 @@ async function startRecording(sourceId) {
         
         mainCard.classList.add('recording');
         statusDot.classList.add('active');
-        statusLabel.textContent = "Gravando Áudio...";
+        statusLabel.textContent = isRecordingVideo ? "Gravando Vídeo + Áudio..." : "Gravando Áudio...";
         startTime = Date.now();
         totalPausedTime = 0;
         isPaused = false;
@@ -597,7 +621,7 @@ async function saveRecording() {
         folderName: currentMeetingFolder
     };
     
-    const result = await window.electronAPI.saveFile({ buffer, fileName, metadata });
+    const result = await window.electronAPI.saveFile({ buffer, fileName, metadata, hasVideo: isRecordingVideo });
     
     if (result.success) {
         statusLabel.textContent = "Aguardando Reunião...";
@@ -715,6 +739,11 @@ async function openRecording(filePath) {
     try {
         if (isRecording) {
             alert("Não é possível reproduzir enquanto uma gravação está em andamento.");
+            return;
+        }
+
+        if (filePath.endsWith('.webm')) {
+            window.electronAPI.openFile(filePath);
             return;
         }
 

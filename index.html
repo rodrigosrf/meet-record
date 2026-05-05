@@ -69,6 +69,22 @@
                 </div>
 
                 <div class="card-controls" id="cardControls">
+                    <div class="manual-options">
+                        <div class="mode-toggle">
+                            <div class="mode-label audio-mode active">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                                <span>Áudio</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="recordVideoCheckbox">
+                                <span class="slider round"></span>
+                            </label>
+                            <div class="mode-label video-mode">
+                                <span>Vídeo</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+                            </div>
+                        </div>
+                    </div>
                     <button id="startBtn" class="btn-primary" style="width: 100%;">Iniciar Gravação Manual</button>
                     <div id="recordingButtons" class="recording-buttons hidden">
                         <button id="pauseBtn" class="btn-secondary">

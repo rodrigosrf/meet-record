@@ -232,13 +232,25 @@ ipcMain.handle('get-file-buffer', async (event, filePath) => {
 ipcMain.handle('delete-file', async (event, filePath) => {
     try {
         if (fs.existsSync(filePath)) {
+            const baseName = path.parse(filePath).name;
+            const dir = path.dirname(filePath);
+            
+            // Delete the file itself
             fs.unlinkSync(filePath);
             
             // Also try to delete metadata json
-            const metadataPath = filePath.replace('.mp3', '.json');
+            const metadataPath = path.join(dir, baseName + '.json');
             if (fs.existsSync(metadataPath)) {
                 fs.unlinkSync(metadataPath);
             }
+
+            // Also try to delete the "other" version (mp3 or webm)
+            const otherExt = filePath.endsWith('.mp3') ? '.webm' : '.mp3';
+            const otherPath = path.join(dir, baseName + otherExt);
+            if (fs.existsSync(otherPath)) {
+                fs.unlinkSync(otherPath);
+            }
+
             return { success: true };
         }
         return { success: false, error: 'Arquivo não encontrado.' };
@@ -282,8 +294,9 @@ ipcMain.handle('get-library-videos', async () => {
             const stat = fs.statSync(fullPath);
             if (stat.isDirectory()) {
                 scanDir(fullPath);
-            } else if (file.endsWith('.mp3')) {
-                const metadataPath = fullPath.replace('.mp3', '.json');
+            } else if (file.endsWith('.mp3') || file.endsWith('.webm')) {
+                const baseName = path.parse(fullPath).name;
+                const metadataPath = path.join(currentPath, baseName + '.json');
                 let metadata = {};
                 if (fs.existsSync(metadataPath)) {
                     try {
@@ -312,7 +325,7 @@ ipcMain.handle('get-library-videos', async () => {
     }
 });
 
-ipcMain.handle('save-file', async (event, { buffer, fileName, metadata }) => {
+ipcMain.handle('save-file', async (event, { buffer, fileName, metadata, hasVideo }) => {
     const outputDir = store.get('outputDirectory');
     if (!outputDir) return { success: false, error: 'No output directory' };
 
@@ -330,6 +343,7 @@ ipcMain.handle('save-file', async (event, { buffer, fileName, metadata }) => {
     const tempWebmPath = path.join(targetDir, `temp_${Date.now()}.webm`);
     const finalMp3Name = fileName.replace('.webm', '.mp3');
     const finalMp3Path = path.join(targetDir, finalMp3Name);
+    const finalWebmPath = path.join(targetDir, fileName);
 
     try {
         // 1. Save temp webm file
@@ -346,7 +360,6 @@ ipcMain.handle('save-file', async (event, { buffer, fileName, metadata }) => {
             const safeTitle = combinedTitle.replace(/"/g, '\\"');
             metadataArgs += ` -metadata title="${safeTitle}"`;
             
-            // Keep the comment for other players, but focus on Title for Windows
             if (metadata.note) {
                 const safeNote = metadata.note.replace(/"/g, '\\"').replace(/\r?\n/g, ' ');
                 metadataArgs += ` -metadata comment="${safeNote}"`;
@@ -357,21 +370,31 @@ ipcMain.handle('save-file', async (event, { buffer, fileName, metadata }) => {
         
         return new Promise((resolve) => {
             exec(ffmpegCommand, (error) => {
-                // Delete temp file regardless of error
-                if (fs.existsSync(tempWebmPath)) {
-                    fs.unlinkSync(tempWebmPath);
-                }
-
                 if (error) {
                     console.error('Error converting to mp3:', error);
+                    if (fs.existsSync(tempWebmPath)) fs.unlinkSync(tempWebmPath);
                     resolve({ success: false, error: 'Falha na conversão para MP3. Verifique se o ffmpeg está instalado.' });
                 } else {
+                    // Success converting to MP3
+                    
+                    // If hasVideo is true, we keep the webm as well
+                    if (hasVideo) {
+                        fs.renameSync(tempWebmPath, finalWebmPath);
+                    } else {
+                        // Otherwise delete temp webm
+                        if (fs.existsSync(tempWebmPath)) fs.unlinkSync(tempWebmPath);
+                    }
+
                     // Save metadata if provided
                     if (metadata) {
                         const metadataPath = finalMp3Path.replace('.mp3', '.json');
                         fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+                        
+                        // If it's a video, we might want a separate json or just one for both?
+                        // The library currently looks for .mp3 then matches .json.
+                        // If we have both, one .json is enough as they share the same base name.
                     }
-                    resolve({ success: true, path: finalMp3Path });
+                    resolve({ success: true, path: hasVideo ? finalWebmPath : finalMp3Path });
                 }
             });
         });
