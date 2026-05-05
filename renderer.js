@@ -35,6 +35,8 @@ const logsPanel = document.getElementById('logsPanel');
 const closeLogsBtn = document.getElementById('closeLogsBtn');
 const logsContent = document.getElementById('logsContent');
 const autoRecordCheckbox = document.getElementById('autoRecordCheckbox');
+const titleInput = document.getElementById('titleInput');
+const editTitleBtn = document.getElementById('editTitleBtn');
 
 // Audio Context for Visualizer
 let audioCtx;
@@ -57,8 +59,11 @@ let allVideos = [];
 let currentFilter = 'all';
 let searchQuery = '';
 let currentMeetingFolder = "";
+let currentMeetingName = "";
 let lastScreenshotData = null;
 let isRecordingVideo = false;
+let config = {};
+let isTitleManuallyEdited = false;
 
 // Initialize
 async function init() {
@@ -156,8 +161,8 @@ async function init() {
             const currentMeeting = meetings.find(m => m.handle === currentMeetingHandle);
             if (!currentMeeting) {
                 stopRecording();
-            } else if (currentMeeting.title !== currentMeetingName) {
-                // Title changed but same handle, just update the UI
+            } else if (!isTitleManuallyEdited && titleInput.classList.contains('hidden') && currentMeeting.title !== currentMeetingName) {
+                // Only auto-update if not manually edited and not currently being edited
                 currentMeetingName = currentMeeting.title;
                 meetingTitle.textContent = currentMeetingName;
             }
@@ -255,6 +260,45 @@ async function init() {
     // Initial Logs Fetch
     const initialLogs = await window.electronAPI.getLogs();
     initialLogs.forEach(log => addLogToUI(log, false));
+
+    // Title Editing Events
+    meetingTitle.addEventListener('click', enterEditMode);
+    editTitleBtn.addEventListener('click', enterEditMode);
+    
+    titleInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') exitEditMode(true);
+        if (e.key === 'Escape') exitEditMode(false);
+    });
+    
+    titleInput.addEventListener('blur', () => {
+        exitEditMode(true);
+    });
+}
+
+function enterEditMode() {
+    if (meetingTitle.textContent === "Modo Player" || meetingTitle.textContent === "Processando arquivo") return;
+    
+    titleInput.value = meetingTitle.textContent === "Nenhuma reunião detectada" ? "" : meetingTitle.textContent;
+    meetingTitle.classList.add('hidden');
+    editTitleBtn.classList.add('hidden');
+    titleInput.classList.remove('hidden');
+    titleInput.focus();
+    titleInput.select();
+}
+
+function exitEditMode(save) {
+    if (save && titleInput.value.trim() !== "") {
+        const newTitle = titleInput.value.trim();
+        if (newTitle !== currentMeetingName) {
+            currentMeetingName = newTitle;
+            meetingTitle.textContent = newTitle;
+            isTitleManuallyEdited = true;
+        }
+    }
+    
+    titleInput.classList.add('hidden');
+    meetingTitle.classList.remove('hidden');
+    editTitleBtn.classList.remove('hidden');
 }
 
 async function toggleLibrary() {
@@ -423,6 +467,7 @@ async function handleManualStart() {
     }
 
     isManualRecording = true;
+    isTitleManuallyEdited = false;
     statusLabel.textContent = "Buscando Janelas...";
     const sources = await window.electronAPI.getSources();
     
@@ -432,17 +477,21 @@ async function handleManualStart() {
     });
 
     if (meetingSource) {
-        currentMeetingName = meetingSource.name;
-        meetingTitle.textContent = meetingSource.name;
+        if (!isTitleManuallyEdited) {
+            currentMeetingName = meetingSource.name;
+            meetingTitle.textContent = meetingSource.name;
+        }
         startRecording(meetingSource.id, hasVideo);
         return;
     }
 
     const screenSource = sources.find(s => s.id.startsWith('screen:')) || sources[0];
     if (screenSource) {
-        currentMeetingName = "Gravação Manual";
+        if (!isTitleManuallyEdited) {
+            currentMeetingName = "Gravação Manual";
+            meetingTitle.textContent = "Gravação Manual (Tela)";
+        }
         currentMeetingHandle = "manual_" + Date.now();
-        meetingTitle.textContent = "Gravação Manual (Tela)";
         startRecording(screenSource.id, "", hasVideo);
     } else {
         statusLabel.textContent = "Nenhuma fonte encontrada";
@@ -459,9 +508,12 @@ async function handleMeetingDetected(title, handle) {
 
     isStarting = true;
     isManualRecording = false;
-    currentMeetingName = title;
+    // Don't overwrite if manually edited before detection
+    if (!isTitleManuallyEdited) {
+        currentMeetingName = title;
+        meetingTitle.textContent = title;
+    }
     currentMeetingHandle = handle;
-    meetingTitle.textContent = title;
 
     if (!config.outputDirectory) {
         statusLabel.textContent = "Aguardando Configuração";
@@ -613,6 +665,7 @@ function stopRecording(isManual = false) {
         mediaRecorder.stop();
         isRecording = false;
         isStarting = false;
+        isTitleManuallyEdited = false;
         
         const tracks = mediaRecorder.stream.getTracks();
         tracks.forEach(track => track.stop());
