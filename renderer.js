@@ -400,7 +400,7 @@ async function handleManualStart() {
 
     isStarting = true;
     startBtn.disabled = true;
-    startBtn.textContent = "Iniciando...";
+    startBtn.querySelector('span').textContent = "Iniciando...";
     const hasVideo = recordVideoCheckbox.checked;
 
     // Stop playback if active
@@ -544,7 +544,7 @@ async function startRecording(sourceId, hasVideo = false) {
         recordingButtons.classList.remove('hidden');
         startBtn.classList.add('hidden');
         startBtn.disabled = false;
-        startBtn.textContent = "Iniciar Gravação Manual";
+        startBtn.querySelector('span').textContent = "Iniciar Gravação Manual";
         
         pauseBtn.querySelector('span').textContent = "Pausar";
         pauseRecIcon.classList.remove('hidden');
@@ -574,7 +574,7 @@ async function startRecording(sourceId, hasVideo = false) {
         isStarting = false;
         isRecording = false;
         startBtn.disabled = false;
-        startBtn.textContent = "Iniciar Gravação Manual";
+        startBtn.querySelector('span').textContent = "Iniciar Gravação Manual";
     }
 }
 
@@ -599,7 +599,7 @@ function stopRecording(isManual = false) {
         recordingButtons.classList.add('hidden');
         startBtn.classList.remove('hidden');
         startBtn.disabled = false;
-        startBtn.textContent = "Iniciar Gravação Manual";
+        startBtn.querySelector('span').textContent = "Iniciar Gravação Manual";
         
         clearInterval(timerInterval);
         
