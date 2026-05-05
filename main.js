@@ -509,9 +509,35 @@ ipcMain.handle('save-file', async (event, { buffer, fileName, metadata, hasVideo
                         const metadataPath = finalMp3Path.replace('.mp3', '.json');
                         fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
                         
-                        // If it's a video, we might want a separate json or just one for both?
-                        // The library currently looks for .mp3 then matches .json.
-                        // If we have both, one .json is enough as they share the same base name.
+                        // Generate Markdown Sidecar for NotebookLM
+                        try {
+                            const mdPath = finalMp3Path.replace('.mp3', '.md');
+                            const date = new Date(metadata.date);
+                            const formattedDate = date.toLocaleString('pt-BR', { 
+                                day: '2-digit', month: '2-digit', year: 'numeric',
+                                hour: '2-digit', minute: '2-digit'
+                            });
+                            
+                            const durationSeconds = Math.floor(metadata.duration / 1000);
+                            const h = Math.floor(durationSeconds / 3600);
+                            const m = Math.floor((durationSeconds % 3600) / 60);
+                            const s = durationSeconds % 60;
+                            const formattedDuration = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+
+                            const mdContent = `# ${metadata.title || 'Sem Título'}
+
+**Data:** ${formattedDate}
+**Duração:** ${formattedDuration}
+
+---
+
+## Notas da Reunião
+${metadata.note || '_Nenhuma nota registrada._'}
+`;
+                            fs.writeFileSync(mdPath, mdContent);
+                        } catch (mdError) {
+                            console.error('Error generating Markdown sidecar:', mdError);
+                        }
                     }
                     resolve({ success: true, path: hasVideo ? finalWebmPath : finalMp3Path });
                 }
