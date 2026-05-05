@@ -610,15 +610,16 @@ function startDetectionLoop() {
                 thumbnailSize: { width: 0, height: 0 }
             });
 
-            // Broaden the filter to include any window that might belong to Teams
+            // Broaden the filter to include any window that might be a meeting
             const potentialMeetingWindows = sources.filter(source => {
                 const name = source.name.toLowerCase();
-                // If it mentions Teams or meeting-related keywords, we check deeper
                 return name.includes('teams') || 
                        name.includes('reuni') || 
                        name.includes('meeting') || 
                        name.includes('chamada') || 
-                       name.includes('call');
+                       name.includes('call') ||
+                       name.includes('meet') ||
+                       name.includes('confer');
             });
 
             if (potentialMeetingWindows.length === 0) {

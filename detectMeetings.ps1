@@ -27,61 +27,44 @@ foreach ($win in $windows) {
             
             $isMeeting = $false
             
-            # 1. Check if the window title suggests a meeting (highly likely)
-            if ($name -match "Reunião|Meeting|Call|Chamada|Conferência|Em curso|In progress|Ativo|Active") {
-                [Console]::Error.WriteLine("DEBUG: Identificado por título: $name")
-                $isMeeting = $true
-            }
-
-            # If not identified by title, check if we should exclude it or do a deep check
-            if (-not $isMeeting) {
-                # Filter out known non-meeting windows early
-                # We use more specific regex to avoid excluding actual meetings that have "Microsoft Teams" in the title
-                if ($name -match "^Chat \||^Calendar \||^Notificações \||^Notifications \||^Atividade \||^Activity \|" -or $name -eq "Microsoft Teams") {
-                    [Console]::Error.WriteLine("DEBUG: Janela ignorada (lista de exclusão): $name")
-                    continue
+            # Rely entirely on deep check for Teams windows to avoid missing meetings with unusual titles
+            [Console]::Error.WriteLine("DEBUG: Iniciando busca profunda em: $name")
+            
+            # Broaden search: Teams v2 often uses 'Custom' or other types for its web-based UI
+            $condition = [Windows.Automation.Condition]::TrueCondition
+            $elements = $win.FindAll([Windows.Automation.TreeScope]::Descendants, $condition)
+            
+            # If we only found the window itself, try to look for child windows (Teams v2 nested structure)
+            if ($elements.Count -le 1) {
+                [Console]::Error.WriteLine("DEBUG: Poucos elementos na janela principal. Verificando sub-janelas...")
+                $childWinCondition = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Window)
+                $childWindows = $win.FindAll([Windows.Automation.TreeScope]::Children, $childWinCondition)
+                [Console]::Error.WriteLine("DEBUG: Sub-janelas encontradas: $($childWindows.Count)")
+                
+                foreach ($cWin in $childWindows) {
+                    $elements += $cWin.FindAll([Windows.Automation.TreeScope]::Descendants, $condition)
                 }
             }
 
-            # 2. Deep check only if not already confirmed
-            if (-not $isMeeting) {
-                [Console]::Error.WriteLine("DEBUG: Iniciando busca profunda em: $name")
-                
-                # Broaden search: Teams v2 often uses 'Custom' or other types for its web-based UI
-                $condition = [Windows.Automation.Condition]::TrueCondition
-                $elements = $win.FindAll([Windows.Automation.TreeScope]::Descendants, $condition)
-                
-                # If we only found the window itself, try to look for child windows (Teams v2 nested structure)
-                if ($elements.Count -le 1) {
-                    [Console]::Error.WriteLine("DEBUG: Poucos elementos na janela principal. Verificando sub-janelas...")
-                    $childWinCondition = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Window)
-                    $childWindows = $win.FindAll([Windows.Automation.TreeScope]::Children, $childWinCondition)
-                    [Console]::Error.WriteLine("DEBUG: Sub-janelas encontradas: $($childWindows.Count)")
+            [Console]::Error.WriteLine("DEBUG: Elementos totais analisados: $($elements.Count)")
+            
+            foreach ($el in $elements) {
+                try {
+                    $elName = $el.Current.Name
+                    $automationId = $el.Current.AutomationId
                     
-                    foreach ($cWin in $childWindows) {
-                        $elements += $cWin.FindAll([Windows.Automation.TreeScope]::Descendants, $condition)
+                    # Avoid matching the window title itself
+                    if ($elName -eq $name) { continue }
+
+                    # Common meeting controls names (Localized) and Automation IDs
+                    # This is the "Gold Standard" for detection
+                    if ($elName -match "Mute|Mudo|Microfone|\bMic\b|Hang up|Sair|Leave|Desligar|Camera|Câmera|Share|Compartilhar|Participants|Participantes|Rec |Gravar" -or 
+                        $automationId -match "hangup|mute|share|roster|participant|call-controls|recording|join-button") {
+                        [Console]::Error.WriteLine("DEBUG: Reunião CONFIRMADA por elemento interno: '$elName' (ID: $automationId)")
+                        $isMeeting = $true
+                        break
                     }
-                }
-
-                [Console]::Error.WriteLine("DEBUG: Elementos totais analisados: $($elements.Count)")
-                
-                foreach ($el in $elements) {
-                    try {
-                        $elName = $el.Current.Name
-                        $automationId = $el.Current.AutomationId
-                        
-                        # Avoid matching the window title itself
-                        if ($elName -eq $name) { continue }
-
-                        # Common meeting controls names (Localized) and Automation IDs
-                        if ($elName -match "Mute|Mudo|Microfone|\bMic\b|Hang up|Sair|Leave|Desligar|Camera|Câmera|Share|Compartilhar|Participants|Participantes|Rec |Gravar" -or 
-                            $automationId -match "hangup|mute|share|roster|participant|call-controls|recording|join-button") {
-                            [Console]::Error.WriteLine("DEBUG: Reunião CONFIRMADA por elemento interno: '$elName' (ID: $automationId)")
-                            $isMeeting = $true
-                            break
-                        }
-                    } catch { continue }
-                }
+                } catch { continue }
             }
             
             if ($isMeeting) {
