@@ -403,7 +403,8 @@ async function startRecording(sourceId, hasVideo = false) {
         analyser = audioCtx.createAnalyser();
         const source = audioCtx.createMediaStreamSource(stream);
         source.connect(analyser);
-        analyser.fftSize = 64;
+        analyser.fftSize = 256; // Increased for more detail
+        analyser.smoothingTimeConstant = 0.8;
         const bufferLength = analyser.frequencyBinCount;
         dataArray = new Uint8Array(bufferLength);
 
@@ -555,24 +556,61 @@ function togglePause() {
 
 function drawVisualizer() {
     animationId = requestAnimationFrame(drawVisualizer);
+    
+    const canvas = document.getElementById('visualizerCanvas');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width = canvas.offsetWidth;
+    const height = canvas.height = canvas.offsetHeight;
+    
     analyser.getByteFrequencyData(dataArray);
 
-    for (let i = 1; i <= 8; i++) {
-        const bar = document.getElementById(`bar${i}`);
-        if (bar) {
-            // Use frequency data to set height (scaled for UI)
-            const index = Math.floor(i * (dataArray.length / 8)) - 1;
-            const val = dataArray[index];
-            const height = Math.max(10, (val / 255) * 35);
-            bar.style.height = `${height}px`;
+    ctx.clearRect(0, 0, width, height);
+    
+    const barWidth = (width / dataArray.length) * 2.5;
+    let barHeight;
+    let x = 0;
+
+    // Create Gradient
+    const gradient = ctx.createLinearGradient(0, height, 0, 0);
+    gradient.addColorStop(0, '#38bdf8'); // var(--accent-color)
+    gradient.addColorStop(1, '#818cf8'); // Lighter indigo
+
+    for(let i = 0; i < dataArray.length; i++) {
+        barHeight = (dataArray[i] / 255) * height;
+
+        // Draw with some glow/softness
+        ctx.fillStyle = gradient;
+        
+        // Rounded bars logic
+        const radius = barWidth / 2;
+        const barX = x;
+        const barY = height - barHeight;
+        
+        if (barHeight > 1) {
+            ctx.beginPath();
+            ctx.roundRect(barX, barY, barWidth - 2, barHeight, [radius, radius, 0, 0]);
+            ctx.fill();
+            
+            // Subtle Glow for higher peaks
+            if (dataArray[i] > 150) {
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#38bdf8';
+            } else {
+                ctx.shadowBlur = 0;
+            }
         }
+
+        x += barWidth + 1;
     }
 }
 
 function resetVisualizer() {
-    for (let i = 1; i <= 8; i++) {
-        const bar = document.getElementById(`bar${i}`);
-        if (bar) bar.style.height = `10px`;
+    const canvas = document.getElementById('visualizerCanvas');
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
 }
 
