@@ -44,7 +44,6 @@ let isStarting = false;
 let isManualRecording = false;
 let startTime;
 let timerInterval;
-let screenshotInterval;
 let isPaused = false;
 let totalPausedTime = 0;
 let lastPauseStart = 0;
@@ -152,7 +151,7 @@ async function init() {
 
     window.electronAPI.onTriggerManualScreenshot(() => {
         if (isRecording) {
-            captureScreenshot(true);
+            captureScreenshot();
             
             // Show notification for feedback when app is hidden
             const n = new Notification("Meet Record", {
@@ -460,8 +459,8 @@ async function startRecording(sourceId, hasVideo = false) {
         resumeRecIcon.classList.add('hidden');
         statusDot.classList.remove('paused');
         
-        // Start Screenshot Loop
-        startScreenshotLoop(stream);
+        // Setup Screenshot Stream
+        setupScreenshotStream(stream);
         
         // Show Notes and Notification
         notesContainer.classList.remove('hidden');
@@ -511,7 +510,6 @@ function stopRecording(isManual = false) {
         startBtn.textContent = "Iniciar Gravação Manual";
         
         clearInterval(timerInterval);
-        clearInterval(screenshotInterval);
         
         // Cleanup screenshot video
         const video = document.getElementById('screenshotVideo');
@@ -548,7 +546,7 @@ function togglePause() {
         pauseRecIcon.classList.add('hidden');
         resumeRecIcon.classList.remove('hidden');
         
-        clearInterval(screenshotInterval);
+        // Automatic screenshots removed
     } else {
         mediaRecorder.resume();
         isPaused = false;
@@ -561,7 +559,7 @@ function togglePause() {
         pauseRecIcon.classList.remove('hidden');
         resumeRecIcon.classList.add('hidden');
         
-        startScreenshotLoop(globalStream);
+        setupScreenshotStream(globalStream);
     }
 
     // Sync with Overlay
@@ -709,7 +707,7 @@ function updateTimer() {
     window.electronAPI.syncOverlay({ timer: meetingTime.textContent });
 }
 
-async function captureScreenshot(force = false) {
+async function captureScreenshot() {
     if (!isRecording || !globalStream) return;
 
     try {
@@ -725,34 +723,14 @@ async function captureScreenshot(force = false) {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // Smart Capture check (skip if force=true)
-        if (!force && config.smartCapture !== false) {
-            const compareCanvas = document.createElement('canvas');
-            compareCanvas.width = 32;
-            compareCanvas.height = 32;
-            const cCtx = compareCanvas.getContext('2d');
-            cCtx.drawImage(canvas, 0, 0, 32, 32);
-            const currentData = cCtx.getImageData(0, 0, 32, 32).data;
-
-            if (lastScreenshotData) {
-                let diff = 0;
-                for (let i = 0; i < currentData.length; i += 4) {
-                    diff += Math.abs(currentData[i] - lastScreenshotData[i]);
-                    diff += Math.abs(currentData[i+1] - lastScreenshotData[i+1]);
-                    diff += Math.abs(currentData[i+2] - lastScreenshotData[i+2]);
-                }
-                const avgDiff = diff / (32 * 32 * 3);
-                if (avgDiff < 5) return; // Skip if too similar
-            }
-            lastScreenshotData = currentData;
-        }
+        // Manual capture always proceeds without similarity check
         
         canvas.toBlob(async (blob) => {
             if (!blob) return;
             const buffer = new Uint8Array(await blob.arrayBuffer());
             const now = new Date();
             const timestamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}`;
-            const fileName = force ? `manual_screenshot_${timestamp}.jpg` : `screenshot_${timestamp}.jpg`;
+            const fileName = `manual_screenshot_${timestamp}.jpg`;
             
             await window.electronAPI.saveScreenshot({ 
                 buffer, 
@@ -767,7 +745,7 @@ async function captureScreenshot(force = false) {
 
 let globalStream = null;
 
-async function startScreenshotLoop(stream) {
+async function setupScreenshotStream(stream) {
     globalStream = stream;
     const video = document.createElement('video');
     video.id = 'screenshotVideo';
@@ -778,12 +756,6 @@ async function startScreenshotLoop(stream) {
     
     video.onloadedmetadata = () => {
         video.play();
-        
-        const intervalMs = (config.screenshotInterval || 60) * 1000;
-        
-        screenshotInterval = setInterval(async () => {
-            captureScreenshot(false);
-        }, intervalMs);
     };
 }
 

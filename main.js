@@ -10,8 +10,7 @@ const __dirname = path.dirname(__filename);
 
 const store = new Store({
     defaults: {
-        screenshotInterval: 60, // seconds
-        smartCapture: true
+        // Automatic screenshots removed - interval and smartCapture no longer needed
     }
 });
 
@@ -204,9 +203,7 @@ ipcMain.handle('select-directory', async () => {
 
 ipcMain.handle('get-config', () => {
     return {
-        outputDirectory: store.get('outputDirectory'),
-        screenshotInterval: store.get('screenshotInterval'),
-        smartCapture: store.get('smartCapture')
+        outputDirectory: store.get('outputDirectory')
     };
 });
 
@@ -214,17 +211,9 @@ ipcMain.handle('update-config', (event, newConfig) => {
     if (newConfig.outputDirectory !== undefined) {
         store.set('outputDirectory', newConfig.outputDirectory);
     }
-    if (newConfig.screenshotInterval !== undefined) {
-        store.set('screenshotInterval', newConfig.screenshotInterval);
-    }
-    if (newConfig.smartCapture !== undefined) {
-        store.set('smartCapture', newConfig.smartCapture);
-    }
     
     const updatedConfig = {
-        outputDirectory: store.get('outputDirectory'),
-        screenshotInterval: store.get('screenshotInterval'),
-        smartCapture: store.get('smartCapture')
+        outputDirectory: store.get('outputDirectory')
     };
     
     mainWindow.webContents.send('config-updated', updatedConfig);
