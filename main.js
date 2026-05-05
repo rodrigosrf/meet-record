@@ -267,10 +267,40 @@ ipcMain.handle('get-recording-thumbnail', async (event, folderName) => {
     const imagesDir = path.join(outputDir, 'images', folderName);
     try {
         if (fs.existsSync(imagesDir)) {
-            const files = fs.readdirSync(imagesDir);
-            const firstImage = files.find(f => f.endsWith('.jpg') || f.endsWith('.png'));
-            if (firstImage) {
-                const fullPath = path.join(imagesDir, firstImage);
+            const files = fs.readdirSync(imagesDir)
+                .filter(f => f.endsWith('.jpg') || f.endsWith('.png'));
+            
+            if (files.length === 0) return null;
+
+            // Sort files to process them in chronological order
+            files.sort();
+
+            let selectedImage = null;
+            let largestImage = null;
+            let maxSize = 0;
+
+            for (const file of files) {
+                const fullPath = path.join(imagesDir, file);
+                const size = fs.statSync(fullPath).size;
+
+                if (size > maxSize) {
+                    maxSize = size;
+                    largestImage = file;
+                }
+
+                // Threshold: 100KB is usually enough to avoid purely black/empty screens
+                if (!selectedImage && size > 100000) {
+                    selectedImage = file;
+                    // We don't break yet because we want to know the largest just in case
+                }
+            }
+
+            // Use the first one that passed the threshold, 
+            // or the largest one if none did.
+            const finalImage = selectedImage || largestImage;
+
+            if (finalImage) {
+                const fullPath = path.join(imagesDir, finalImage);
                 const buffer = fs.readFileSync(fullPath);
                 return { success: true, buffer: new Uint8Array(buffer) };
             }
