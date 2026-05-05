@@ -14,33 +14,56 @@ body {
 }
 
 .overlay-container {
-    background: var(--bg-overlay);
-    backdrop-filter: blur(12px);
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(25px);
+    -webkit-backdrop-filter: blur(25px);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
+    border-radius: 100px;
     display: flex;
     align-items: center;
-    padding: 8px 12px;
-    gap: 12px;
+    padding: 6px 16px;
+    gap: 14px;
     color: var(--text);
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-    height: 40px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    height: 38px;
+    white-space: nowrap;
 }
 
 .drag-handle {
     -webkit-app-region: drag;
     cursor: grab;
-    color: rgba(255, 255, 255, 0.3);
+    color: rgba(255, 255, 255, 0.2);
     display: flex;
     align-items: center;
 }
 
+.status-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.recording-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--danger);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--danger);
+    animation: pulse 1.5s infinite;
+}
+
 .timer-display {
-    font-family: monospace;
-    font-size: 14px;
-    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
     color: var(--accent);
-    min-width: 65px;
+    min-width: 62px;
+}
+
+.divider {
+    width: 1px;
+    height: 18px;
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .actions {
@@ -51,34 +74,37 @@ body {
 
 button {
     background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     color: var(--text);
-    border-radius: 6px;
+    border-radius: 50%;
     width: 28px;
     height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 button:hover {
-    background: rgba(255, 255, 255, 0.15);
-    transform: translateY(-1px);
+    background: var(--accent);
+    color: #0f172a;
+    border-color: var(--accent);
+    transform: scale(1.1);
 }
 
 button svg {
-    opacity: 0.8;
+    opacity: 0.9;
 }
 
 .stop-btn:hover {
     background: var(--danger);
     border-color: var(--danger);
+    color: white;
 }
 
 .hidden {
-    display: none;
+    display: none !important;
 }
 
 /* Animations */
