@@ -1,12 +1,13 @@
 :root {
     --bg-color: #0f172a;
-    --card-bg: rgba(30, 41, 59, 0.7);
+    --card-bg: rgba(30, 41, 59, 0.4);
     --accent-color: #38bdf8;
     --text-primary: #f1f5f9;
     --text-secondary: #94a3b8;
     --danger: #ef4444;
     --success: #22c55e;
-    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-highlight: rgba(255, 255, 255, 0.05);
 }
 
 * {
@@ -18,6 +19,9 @@
 
 body {
     background-color: var(--bg-color);
+    background-image: 
+        radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.15) 0px, transparent 50%);
     color: var(--text-primary);
     overflow: hidden;
     height: 100vh;
@@ -241,12 +245,13 @@ input:checked + .slider:before {
 
 .status-card {
     background: var(--card-bg);
-    backdrop-filter: blur(12px);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--glass-border);
-    border-radius: 24px;
-    padding: 3rem;
+    border-radius: 32px;
+    padding: 3.5rem;
     width: 100%;
-    max-width: 500px;
+    max-width: 520px;
     text-align: center;
     transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
@@ -255,7 +260,10 @@ input:checked + .slider:before {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 320px;
+    min-height: 340px;
+    box-shadow: 
+        0 20px 50px rgba(0, 0, 0, 0.3),
+        inset 0 0 0 1px var(--glass-highlight);
 }
 
 .status-card.recording {
@@ -724,11 +732,13 @@ footer {
     right: -100%;
     width: 600px;
     height: 100vh;
-    background: var(--bg-color);
+    background: rgba(15, 23, 42, 0.8);
+    backdrop-filter: blur(30px);
+    -webkit-backdrop-filter: blur(30px);
     border-left: 1px solid var(--glass-border);
-    box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+    box-shadow: -20px 0 50px rgba(0, 0, 0, 0.4);
     z-index: 100;
-    transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: right 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
     flex-direction: column;
 }
