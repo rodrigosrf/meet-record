@@ -165,12 +165,19 @@ function createOverlayWindow() {
         alwaysOnTop: true,
         resizable: false,
         skipTaskbar: true,
+        focusable: false, // Don't take focus away from other apps
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
             nodeIntegration: false
         }
     });
+
+    // Ensure it stays on top of everything, including full-screen apps
+    overlayWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+    
+    // Make it visible on all virtual desktops
+    overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
     overlayWindow.loadFile('overlay.html');
     
@@ -181,6 +188,13 @@ function createOverlayWindow() {
 
     overlayWindow.on('closed', () => {
         overlayWindow = null;
+    });
+
+    // Re-enforce always on top if it somehow loses it
+    overlayWindow.on('always-on-top-changed', (event, isAlwaysOnTop) => {
+        if (!isAlwaysOnTop) {
+            overlayWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+        }
     });
 }
 
@@ -353,11 +367,11 @@ ipcMain.handle('get-recording-thumbnail', async (event, folderName) => {
     const outputDir = store.get('outputDirectory');
     if (!outputDir || !folderName) return null;
 
-    const imagesDir = path.join(outputDir, 'images', folderName);
+    const imagesDir = path.join(outputDir, 'images');
     try {
         if (fs.existsSync(imagesDir)) {
             const files = fs.readdirSync(imagesDir)
-                .filter(f => f.endsWith('.jpg') || f.endsWith('.png'));
+                .filter(f => (f.endsWith('.jpg') || f.endsWith('.png')) && f.startsWith(folderName));
             
             if (files.length === 0) return null;
 
@@ -555,9 +569,6 @@ ipcMain.handle('save-screenshot', async (event, { buffer, fileName, folderName }
     if (!outputDir) return { success: false, error: 'Diretório de saída não configurado.' };
 
     let imagesDir = path.join(outputDir, 'images');
-    if (folderName) {
-        imagesDir = path.join(imagesDir, folderName);
-    }
 
     try {
         if (!fs.existsSync(imagesDir)) {
@@ -577,11 +588,15 @@ ipcMain.handle('discard-meeting-screenshots', async (event, folderName) => {
     const outputDir = store.get('outputDirectory');
     if (!outputDir || !folderName) return { success: false };
 
-    const folderPath = path.join(outputDir, 'images', folderName);
+    const imagesDir = path.join(outputDir, 'images');
     try {
-        if (fs.existsSync(folderPath)) {
-            // Use recursive delete
-            fs.rmSync(folderPath, { recursive: true, force: true });
+        if (fs.existsSync(imagesDir)) {
+            const files = fs.readdirSync(imagesDir);
+            files.forEach(file => {
+                if (file.startsWith(folderName)) {
+                    fs.unlinkSync(path.join(imagesDir, file));
+                }
+            });
             return { success: true };
         }
     } catch (error) {

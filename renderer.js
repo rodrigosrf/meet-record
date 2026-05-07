@@ -901,7 +901,7 @@ async function captureScreenshot() {
             const buffer = new Uint8Array(await blob.arrayBuffer());
             const now = new Date();
             const timestamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}`;
-            const fileName = `manual_screenshot_${timestamp}.jpg`;
+            const fileName = `${currentMeetingFolder}_manual_screenshot_${timestamp}.jpg`;
             
             await window.electronAPI.saveScreenshot({ 
                 buffer, 
