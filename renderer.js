@@ -481,7 +481,7 @@ async function handleManualStart() {
             currentMeetingName = meetingSource.name;
             meetingTitle.textContent = meetingSource.name;
         }
-        startRecording(meetingSource.id, hasVideo);
+        startRecording(meetingSource.id, "", hasVideo);
         return;
     }
 
@@ -529,11 +529,11 @@ async function handleMeetingDetected(title, handle) {
     const source = sources.find(s => s.name === title) || sources.find(s => s.name.includes(title) || title.includes(s.name));
     
     if (source) {
-        startRecording(source.id, handle);
+        startRecording(source.id, handle, recordVideoCheckbox.checked);
     } else {
         const teamsSource = sources.find(s => s.name.includes('Teams'));
         if (teamsSource) {
-            startRecording(teamsSource.id, handle);
+            startRecording(teamsSource.id, handle, recordVideoCheckbox.checked);
         }
     }
 }
@@ -601,6 +601,9 @@ async function startRecording(sourceId, handle, hasVideo = false) {
         isRecording = true;
         isStarting = false;
         
+        // Disable mode toggle during recording
+        recordVideoCheckbox.disabled = true;
+        
         mainCard.classList.add('recording');
         statusDot.classList.add('active');
         statusLabel.textContent = isRecordingVideo ? "Gravando Vídeo + Áudio..." : "Gravando Áudio...";
@@ -645,6 +648,7 @@ async function startRecording(sourceId, handle, hasVideo = false) {
         isRecording = false;
         startBtn.disabled = false;
         startBtn.querySelector('span').textContent = "Iniciar Gravação Manual";
+        recordVideoCheckbox.disabled = false;
     }
 }
 
@@ -679,6 +683,9 @@ function stopRecording(isManual = false) {
         startBtn.classList.remove('hidden');
         startBtn.disabled = false;
         startBtn.querySelector('span').textContent = "Iniciar Gravação Manual";
+        
+        // Re-enable mode toggle
+        recordVideoCheckbox.disabled = false;
         
         clearInterval(timerInterval);
         
