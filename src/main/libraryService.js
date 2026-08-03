@@ -57,44 +57,113 @@ export async function getLibraryVideosAsync(outputDir) {
     }
 }
 
-export async function getRecordingThumbnailAsync(outputDir, folderName) {
+export async function getRecordingThumbnailAsync(outputDir, folderName, recPath) {
     if (!outputDir || !folderName) return null;
 
+    const findImageInDir = async (dirPath) => {
+        try {
+            await fs.promises.access(dirPath);
+            const files = await fs.promises.readdir(dirPath);
+            const matchingFiles = files.filter(f => (f.endsWith('.jpg') || f.endsWith('.png')) && f.startsWith(folderName));
+
+            if (matchingFiles.length === 0) return null;
+            matchingFiles.sort();
+
+            let selectedImage = null;
+            let largestImage = null;
+            let maxSize = 0;
+
+            for (const file of matchingFiles) {
+                const fullPath = path.join(dirPath, file);
+                const stat = await fs.promises.stat(fullPath);
+                if (stat.size > maxSize) {
+                    maxSize = stat.size;
+                    largestImage = file;
+                }
+                if (!selectedImage && stat.size > 100000) {
+                    selectedImage = file;
+                }
+            }
+
+            const finalImage = selectedImage || largestImage;
+            if (finalImage) {
+                const fullPath = path.join(dirPath, finalImage);
+                const buffer = await fs.promises.readFile(fullPath);
+                return { success: true, buffer: new Uint8Array(buffer) };
+            }
+        } catch (e) {
+            return null;
+        }
+        return null;
+    };
+
+    // 1. Try directory of recPath if provided
+    if (recPath) {
+        const recDir = path.dirname(recPath);
+        const result = await findImageInDir(recDir);
+        if (result) return result;
+    }
+
+    // 2. Recursive scan in outputDir
+    async function scanForImage(currentPath) {
+        try {
+            const entries = await fs.promises.readdir(currentPath, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(currentPath, entry.name);
+                if (entry.isDirectory()) {
+                    if (entry.name === 'archive') continue;
+                    const res = await findImageInDir(fullPath);
+                    if (res) return res;
+                    const subRes = await scanForImage(fullPath);
+                    if (subRes) return subRes;
+                }
+            }
+        } catch (e) {}
+        return null;
+    }
+
+    return await scanForImage(outputDir);
+}
+
+export async function migrateImagesDirectoryAsync(outputDir) {
+    if (!outputDir) return;
     const imagesDir = path.join(outputDir, 'images');
     try {
         await fs.promises.access(imagesDir);
-        const files = await fs.promises.readdir(imagesDir);
-        const matchingFiles = files.filter(f => (f.endsWith('.jpg') || f.endsWith('.png')) && f.startsWith(folderName));
-
-        if (matchingFiles.length === 0) return null;
-        matchingFiles.sort();
-
-        let selectedImage = null;
-        let largestImage = null;
-        let maxSize = 0;
-
-        for (const file of matchingFiles) {
-            const fullPath = path.join(imagesDir, file);
-            const stat = await fs.promises.stat(fullPath);
-            if (stat.size > maxSize) {
-                maxSize = stat.size;
-                largestImage = file;
-            }
-            if (!selectedImage && stat.size > 100000) {
-                selectedImage = file;
-            }
-        }
-
-        const finalImage = selectedImage || largestImage;
-        if (finalImage) {
-            const fullPath = path.join(imagesDir, finalImage);
-            const buffer = await fs.promises.readFile(fullPath);
-            return { success: true, buffer: new Uint8Array(buffer) };
-        }
-    } catch (error) {
-        console.error('Error fetching thumbnail:', error);
+    } catch {
+        return;
     }
-    return null;
+
+    try {
+        const files = await fs.promises.readdir(imagesDir);
+        for (const file of files) {
+            const srcPath = path.join(imagesDir, file);
+            const stat = await fs.promises.stat(srcPath);
+            if (stat.isFile() && (file.endsWith('.jpg') || file.endsWith('.png'))) {
+                let targetSubDir = '';
+                const match = file.match(/^(\d{4})(\d{2})(\d{2})/);
+                if (match) {
+                    targetSubDir = `${match[1]}-${match[2]}-${match[3]}`;
+                } else {
+                    const d = stat.mtime;
+                    const pad = n => String(n).padStart(2, '0');
+                    targetSubDir = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                }
+
+                const destDir = path.join(outputDir, targetSubDir);
+                await fs.promises.mkdir(destDir, { recursive: true });
+                const destPath = path.join(destDir, file);
+                await fs.promises.rename(srcPath, destPath);
+            }
+        }
+
+        const remaining = await fs.promises.readdir(imagesDir);
+        if (remaining.length === 0) {
+            await fs.promises.rmdir(imagesDir);
+        }
+    } catch (e) {
+        console.error('Error migrating images directory:', e);
+    }
 }
 
 export async function deleteRecordingAsync(filePath) {
@@ -115,6 +184,16 @@ export async function deleteRecordingAsync(filePath) {
                 await fs.promises.unlink(relatedPath);
             } catch (e) { /* ignore if doesn't exist */ }
         }
+
+        // Delete associated screenshots/prints starting with baseName in dir
+        try {
+            const files = await fs.promises.readdir(dir);
+            for (const file of files) {
+                if (file.startsWith(baseName) && (file.endsWith('.jpg') || file.endsWith('.png'))) {
+                    await fs.promises.unlink(path.join(dir, file));
+                }
+            }
+        } catch (e) { /* ignore */ }
 
         return { success: true };
     } catch (error) {
@@ -153,7 +232,7 @@ export async function archiveRecordingsAsync(outputDir, archivePath, olderThanDa
                         await fs.promises.rmdir(fullPath);
                     }
                 } catch (e) { /* ignore */ }
-            } else if (item.name.endsWith('.mp3') || item.name.endsWith('.webm') || item.name.endsWith('.json') || item.name.endsWith('.md')) {
+            } else if (item.name.endsWith('.mp3') || item.name.endsWith('.webm') || item.name.endsWith('.json') || item.name.endsWith('.md') || item.name.endsWith('.jpg') || item.name.endsWith('.png')) {
                 const stat = await fs.promises.stat(fullPath);
                 if (stat.mtimeMs < cutoff) {
                     const destDir = path.join(archivePath, relativePath);
@@ -189,7 +268,7 @@ export async function reorganizeFilesAsync(outputDir, pathTemplate, resolveTempl
             const fullPath = path.join(currentPath, item.name);
 
             if (item.isDirectory()) {
-                if (item.name === 'images' || item.name === 'archive') continue;
+                if (item.name === 'archive') continue;
                 await scanAndMove(fullPath);
                 try {
                     const remaining = await fs.promises.readdir(fullPath);
@@ -218,6 +297,19 @@ export async function reorganizeFilesAsync(outputDir, pathTemplate, resolveTempl
                                 reorgCount++;
                             } catch (e) { /* ignore missing */ }
                         }
+
+                        // Also move matching images/prints
+                        try {
+                            const files = await fs.promises.readdir(currentPath);
+                            for (const f of files) {
+                                if (f.startsWith(baseName) && (f.endsWith('.jpg') || f.endsWith('.png'))) {
+                                    const srcImg = path.join(currentPath, f);
+                                    const destImg = path.join(targetDir, f);
+                                    await fs.promises.rename(srcImg, destImg);
+                                    reorgCount++;
+                                }
+                            }
+                        } catch (e) { /* ignore */ }
                     }
                 } catch (e) {
                     console.error('Error reading metadata for reorg:', e);

@@ -775,12 +775,14 @@ async function captureScreenshot() {
             const buffer = new Uint8Array(await blob.arrayBuffer());
             const now = new Date();
             const timestamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}`;
-            const fileName = `${currentMeetingFolder}_manual_screenshot_${timestamp}.jpg`;
+            const prefix = currentMeetingFolder || `${timestamp}_grav_manual`;
+            const fileName = `${prefix}_manual_screenshot_${timestamp}.jpg`;
             
             await window.electronAPI.saveScreenshot({ 
                 buffer, 
                 fileName, 
-                folderName: currentMeetingFolder 
+                folderName: prefix,
+                metadata: { title: currentMeetingName || 'Sem_Titulo' }
             });
         }, 'image/jpeg', 0.6);
     } catch (err) {

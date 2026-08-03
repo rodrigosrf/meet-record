@@ -72,7 +72,7 @@ export async function renderLibraryUI({ onOpenRecording, onDeleteRecording, onOp
                 </div>`;
 
             if (rec.metadata && rec.metadata.folderName) {
-                const thumbResult = await window.electronAPI.getRecordingThumbnail(rec.metadata.folderName);
+                const thumbResult = await window.electronAPI.getRecordingThumbnail(rec.metadata.folderName, rec.path);
                 if (thumbResult && thumbResult.success) {
                     const blob = new Blob([thumbResult.buffer], { type: 'image/jpeg' });
                     const thumbUrl = URL.createObjectURL(blob);

@@ -10,7 +10,8 @@ import {
     getRecordingThumbnailAsync, 
     deleteRecordingAsync, 
     archiveRecordingsAsync, 
-    reorganizeFilesAsync 
+    reorganizeFilesAsync,
+    migrateImagesDirectoryAsync
 } from './src/main/libraryService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -254,6 +255,7 @@ app.whenReady().then(() => {
     createWindow();
     createTray();
     startDetectionLoop();
+    migrateImagesDirectoryAsync(store.get('outputDirectory'));
     cleanupOldImages();
 
     app.on('activate', function () {
@@ -389,9 +391,9 @@ ipcMain.handle('delete-file', async (event, filePath) => {
     return await deleteRecordingAsync(filePath);
 });
 
-ipcMain.handle('get-recording-thumbnail', async (event, folderName) => {
+ipcMain.handle('get-recording-thumbnail', async (event, folderName, recPath) => {
     const outputDir = store.get('outputDirectory');
-    return await getRecordingThumbnailAsync(outputDir, folderName);
+    return await getRecordingThumbnailAsync(outputDir, folderName, recPath);
 });
 
 ipcMain.handle('get-library-videos', async () => {
@@ -432,20 +434,23 @@ ipcMain.handle('save-file', async (event, { buffer, fileName, metadata, hasVideo
     }
 });
 
-ipcMain.handle('save-screenshot', async (event, { buffer, fileName, folderName }) => {
+ipcMain.handle('save-screenshot', async (event, { buffer, fileName, folderName, metadata }) => {
     const outputDir = store.get('outputDirectory');
     if (!outputDir) return { success: false, error: 'Diretório de saída não configurado.' };
 
-    let imagesDir = path.join(outputDir, 'images');
+    const orgConfig = store.get('organizationConfig');
+    const pathTemplate = orgConfig?.pathTemplate || '{year}-{month}-{day}';
+    const resolvedDir = resolveTemplate(pathTemplate, metadata || { title: folderName });
+    const targetDir = path.join(outputDir, resolvedDir);
 
     try {
-        if (!fs.existsSync(imagesDir)) {
-            fs.mkdirSync(imagesDir, { recursive: true });
+        if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
         }
 
-        const filePath = path.join(imagesDir, fileName);
+        const filePath = path.join(targetDir, fileName);
         fs.writeFileSync(filePath, Buffer.from(buffer));
-        return { success: true };
+        return { success: true, filePath };
     } catch (error) {
         console.error('Error saving screenshot:', error);
         return { success: false, error: error.message };
@@ -456,17 +461,22 @@ ipcMain.handle('discard-meeting-screenshots', async (event, folderName) => {
     const outputDir = store.get('outputDirectory');
     if (!outputDir || !folderName) return { success: false };
 
-    const imagesDir = path.join(outputDir, 'images');
     try {
-        if (fs.existsSync(imagesDir)) {
-            const files = fs.readdirSync(imagesDir);
-            files.forEach(file => {
-                if (file.startsWith(folderName)) {
-                    fs.unlinkSync(path.join(imagesDir, file));
+        const deleteMatchingImagesInDir = (dir) => {
+            if (!fs.existsSync(dir)) return;
+            const items = fs.readdirSync(dir, { withFileTypes: true });
+            for (const item of items) {
+                const fullPath = path.join(dir, item.name);
+                if (item.isDirectory()) {
+                    deleteMatchingImagesInDir(fullPath);
+                } else if (item.name.startsWith(folderName) && (item.name.endsWith('.jpg') || item.name.endsWith('.png'))) {
+                    try { fs.unlinkSync(fullPath); } catch (e) {}
                 }
-            });
-            return { success: true };
-        }
+            }
+        };
+
+        deleteMatchingImagesInDir(outputDir);
+        return { success: true };
     } catch (error) {
         console.error('Error discarding screenshots:', error);
     }
@@ -551,36 +561,37 @@ ipcMain.handle('update-tag-categories', (event, categories) => {
 
 function cleanupOldImages() {
     const outputDir = store.get('outputDirectory');
-    if (!outputDir) return;
-
-    const imagesDir = path.join(outputDir, 'images');
-    if (!fs.existsSync(imagesDir)) return;
+    if (!outputDir || !fs.existsSync(outputDir)) return;
 
     try {
         const MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
         const now = Date.now();
 
         function cleanDir(dir) {
-            const items = fs.readdirSync(dir);
+            const items = fs.readdirSync(dir, { withFileTypes: true });
             items.forEach(item => {
-                const fullPath = path.join(dir, item);
-                const stats = fs.statSync(fullPath);
-                
-                if (stats.isDirectory()) {
+                const fullPath = path.join(dir, item.name);
+                if (item.isDirectory()) {
+                    if (item.name === 'archive') return;
                     cleanDir(fullPath);
-                    // Delete empty directories
-                    if (fs.readdirSync(fullPath).length === 0) {
-                        fs.rmdirSync(fullPath);
-                    }
-                } else {
-                    if (now - stats.mtimeMs > MAX_AGE) {
-                        fs.unlinkSync(fullPath);
-                    }
+                    // Remove empty subdirectories if any
+                    try {
+                        if (fs.readdirSync(fullPath).length === 0) {
+                            fs.rmdirSync(fullPath);
+                        }
+                    } catch (e) {}
+                } else if (item.name.endsWith('.jpg') || item.name.endsWith('.png')) {
+                    try {
+                        const stats = fs.statSync(fullPath);
+                        if (now - stats.mtimeMs > MAX_AGE) {
+                            fs.unlinkSync(fullPath);
+                        }
+                    } catch (e) {}
                 }
             });
         }
 
-        cleanDir(imagesDir);
+        cleanDir(outputDir);
     } catch (error) {
         console.error('Error during cleanup:', error);
     }
