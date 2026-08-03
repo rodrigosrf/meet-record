@@ -40,6 +40,8 @@ let audioCtx;
 let analyser;
 let dataArray;
 let animationId;
+let silenceCounter = 0;
+let isAudioSilentWarningShown = false;
 
 let mediaRecorder;
 let recordedChunks = [];
@@ -407,11 +409,38 @@ async function startRecording(sourceId, handle, hasVideo = false) {
             includeMic: selectedDeviceId !== 'none'
         });
         
+        // Ensure combinedStream has active audio tracks
+        const audioTracks = combinedStream.getAudioTracks();
+        if (!audioTracks || audioTracks.length === 0 || audioTracks[0].readyState !== 'live') {
+            if (cleanup) cleanup();
+            throw new Error("Nenhuma faixa de áudio ativa capturada do sistema.");
+        }
+
+        // Add track health event listeners
+        audioTracks.forEach(track => {
+            track.onmute = () => {
+                console.warn("[Áudio] Faixa de áudio do sistema foi mutada pelo SO.");
+                if (statusLabel && isRecording) {
+                    statusLabel.textContent = "⚠️ Áudio do sistema mutado";
+                }
+            };
+            track.onunmute = () => {
+                console.log("[Áudio] Faixa de áudio do sistema desmutada.");
+            };
+            track.onended = () => {
+                console.warn("[Áudio] Faixa de áudio encerrada inesperadamente.");
+            };
+        });
+        
         activeStreamCleanup = cleanup;
         globalStream = combinedStream;
 
         // Setup Visualizer
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+        }
+
         analyser = audioCtx.createAnalyser();
         const source = audioCtx.createMediaStreamSource(combinedStream);
         source.connect(analyser);
@@ -419,6 +448,8 @@ async function startRecording(sourceId, handle, hasVideo = false) {
         analyser.smoothingTimeConstant = 0.8;
         dataArray = new Uint8Array(analyser.frequencyBinCount);
 
+        silenceCounter = 0;
+        isAudioSilentWarningShown = false;
         drawVisualizer();
 
         let mimeType = 'audio/webm;codecs=opus';
@@ -578,6 +609,35 @@ function drawVisualizer() {
     const height = canvas.height = canvas.offsetHeight;
     
     analyser.getByteFrequencyData(dataArray);
+
+    if (isRecording && !isPaused) {
+        let total = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+            total += dataArray[i];
+        }
+        if (total === 0) {
+            silenceCounter++;
+            if (silenceCounter > 600 && !isAudioSilentWarningShown) {
+                isAudioSilentWarningShown = true;
+                if (statusLabel) {
+                    statusLabel.textContent = isRecordingVideo 
+                        ? "Gravando Vídeo + Áudio... (⚠️ Sem som no sistema)" 
+                        : "Gravando Áudio... (⚠️ Sem som no sistema)";
+                }
+            }
+        } else {
+            silenceCounter = 0;
+            if (isAudioSilentWarningShown) {
+                isAudioSilentWarningShown = false;
+                if (statusLabel) {
+                    statusLabel.textContent = isRecordingVideo 
+                        ? "Gravando Vídeo + Áudio..." 
+                        : "Gravando Áudio...";
+                }
+            }
+        }
+    }
+
     ctx.clearRect(0, 0, width, height);
     
     const barWidth = (width / dataArray.length) * 2.5;

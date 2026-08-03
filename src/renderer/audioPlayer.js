@@ -32,6 +32,8 @@ export async function openAudioRecording(filePath, { onStateChange }) {
         const playerFileName = document.getElementById('playerFileName');
         const playerRange = document.getElementById('playerRange');
         const playerTimeDisplay = document.getElementById('playerTimeDisplay');
+        const playerCurrentTime = document.getElementById('playerCurrentTime');
+        const playerTotalTime = document.getElementById('playerTotalTime');
         const playPauseBtn = document.getElementById('playPauseBtn');
         const playIcon = document.getElementById('playIcon');
         const pauseIcon = document.getElementById('pauseIcon');
@@ -58,9 +60,12 @@ export async function openAudioRecording(filePath, { onStateChange }) {
         };
 
         function updateTimeDisplay() {
-            if (playerTimeDisplay && playbackAudio) {
-                playerTimeDisplay.textContent = `${formatTime(playbackAudio.currentTime)} / ${formatTime(playbackAudio.duration)}`;
-            }
+            if (!playbackAudio) return;
+            const currentFormatted = formatTime(playbackAudio.currentTime);
+            const totalFormatted = formatTime(playbackAudio.duration);
+            if (playerCurrentTime) playerCurrentTime.textContent = currentFormatted;
+            if (playerTotalTime) playerTotalTime.textContent = totalFormatted;
+            if (playerTimeDisplay) playerTimeDisplay.textContent = `${currentFormatted} / ${totalFormatted}`;
         }
 
         if (playPauseBtn) {

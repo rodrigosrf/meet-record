@@ -22,6 +22,9 @@ export async function createMixedAudioStream({ systemStream, selectedDeviceId, i
         }
 
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+        }
         const destination = audioCtx.createMediaStreamDestination();
 
         // 1. System Audio Track
@@ -80,3 +83,4 @@ export async function createMixedAudioStream({ systemStream, selectedDeviceId, i
         };
     }
 }
+
