@@ -33,5 +33,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     
     showOverlay: () => ipcRenderer.send('show-overlay'),
     hideOverlay: () => ipcRenderer.send('hide-overlay'),
-    onTogglePause: (callback) => ipcRenderer.on('toggle-pause', () => callback())
+    onTogglePause: (callback) => ipcRenderer.on('toggle-pause', () => callback()),
+
+    // Organization Config
+    getOrganizationConfig: () => ipcRenderer.invoke('get-organization-config'),
+    updateOrganizationConfig: (config) => ipcRenderer.invoke('update-organization-config', config),
+    previewOrganizationPath: (data) => ipcRenderer.invoke('preview-organization-path', data),
+    archiveRecordings: (data) => ipcRenderer.invoke('archive-recordings', data),
+    reorganizeFiles: (data) => ipcRenderer.invoke('reorganize-files', data),
+
+    // Tagging System
+    updateRecordingTags: (data) => ipcRenderer.invoke('update-recording-tags', data),
+    getTagCategories: () => ipcRenderer.invoke('get-tag-categories'),
+    updateTagCategories: (categories) => ipcRenderer.invoke('update-tag-categories', categories),
 });

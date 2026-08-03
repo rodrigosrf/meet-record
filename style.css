@@ -1522,3 +1522,408 @@ footer {
     font-family: 'Consolas', monospace;
     font-size: 0.75rem;
 }
+
+/* ============================================ */
+/* TAG SYSTEM STYLES                            */
+/* ============================================ */
+
+/* Tag badges in library items */
+.tag-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    margin: 1px 2px;
+    cursor: default;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.tag-badge.tag-removable {
+    cursor: pointer;
+    padding-right: 4px;
+}
+
+.tag-badge.tag-removable:hover {
+    opacity: 0.7;
+    transform: scale(1.05);
+}
+
+.tag-badge.tag-suggestion {
+    cursor: pointer;
+    opacity: 0.6;
+}
+
+.tag-badge.tag-suggestion:hover {
+    opacity: 1;
+    transform: scale(1.05);
+}
+
+/* Tag container inside library items */
+.lib-item-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    margin-top: 6px;
+}
+
+.lib-item-fav {
+    position: absolute;
+    top: 8px;
+    right: 40px;
+    font-size: 0.9rem;
+    z-index: 5;
+    filter: drop-shadow(0 0 3px rgba(255, 215, 0, 0.5));
+}
+
+/* Tag filter bar */
+.tag-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--glass-border);
+}
+
+.tag-filter-chip {
+    padding: 4px 12px;
+    border-radius: 14px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.tag-filter-chip:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+}
+
+.tag-filter-chip.active {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.15);
+}
+
+.btn-tags {
+    background: rgba(255, 255, 255, 0.06) !important;
+    color: var(--text-secondary) !important;
+    padding: 4px 8px !important;
+    font-size: 0.8rem !important;
+}
+
+.btn-tags:hover {
+    background: rgba(56, 189, 248, 0.15) !important;
+    color: var(--accent-color) !important;
+    filter: brightness(1) !important;
+}
+
+/* ============================================ */
+/* TAG EDITOR MODAL                             */
+/* ============================================ */
+
+.tag-editor-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tag-editor-modal {
+    background: #0f172a;
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    width: 90%;
+    max-width: 480px;
+    animation: modalSlideUp 0.3s ease;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+}
+
+.tag-editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.tag-editor-header h3 {
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.tag-editor-body {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.tag-editor-current {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 36px;
+    align-items: center;
+}
+
+.tag-editor-input-row input {
+    width: 100%;
+    background: #1e293b;
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+.tag-editor-input-row input:focus {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.1);
+}
+
+.tag-editor-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    min-height: 28px;
+}
+
+.tag-editor-favorite {
+    margin-top: 4px;
+}
+
+.tag-editor-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--glass-border);
+}
+
+/* ============================================ */
+/* SETTINGS - TAG CATEGORIES                    */
+/* ============================================ */
+
+.tag-categories-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.tag-category-item {
+    background: rgba(30, 41, 59, 0.4);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.tag-category-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tag-category-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tag-category-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.tag-category-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.tag-badge-sm {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: 500;
+}
+
+.add-category-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.form-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.form-color {
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    cursor: pointer;
+    background: transparent;
+    padding: 2px;
+}
+
+.form-color::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+.form-color::-webkit-color-swatch {
+    border: none;
+    border-radius: 6px;
+}
+
+/* ============================================ */
+/* SETTINGS - ORGANIZATION TAB                  */
+/* ============================================ */
+
+.setting-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.preview-text {
+    color: var(--accent-color) !important;
+    font-family: 'Consolas', monospace;
+    font-size: 0.75rem !important;
+}
+
+code {
+    background: rgba(56, 189, 248, 0.1);
+    color: var(--accent-color);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-family: 'Consolas', monospace;
+}
+
+/* ============================================ */
+/* AUDIO HARDWARE SELECTOR & ENHANCED PLAYER     */
+/* ============================================ */
+
+.audio-hardware-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid var(--glass-border);
+    padding: 6px 12px;
+    border-radius: 20px;
+    color: var(--text-secondary);
+}
+
+.audio-device-dropdown {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    font-family: inherit;
+    outline: none;
+    cursor: pointer;
+    max-width: 200px;
+    text-overflow: ellipsis;
+}
+
+.audio-device-dropdown option {
+    background: #0f172a;
+    color: #f8fafc;
+}
+
+.player-time-display {
+    font-size: 0.75rem;
+    font-family: 'Consolas', monospace;
+    color: var(--accent-color);
+    margin-left: auto;
+}
+
+.player-nav-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.btn-icon-step {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    color: var(--text-secondary);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-icon-step:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    border-color: var(--accent-color);
+}
+
+.speed-selector {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.speed-chips {
+    display: flex;
+    gap: 4px;
+    background: rgba(15, 23, 42, 0.4);
+    padding: 3px;
+    border-radius: 14px;
+    border: 1px solid var(--glass-border);
+}
+
+.speed-chip {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.speed-chip:hover {
+    color: var(--text-primary);
+}
+
+.speed-chip.active {
+    background: var(--accent-color);
+    color: #0f172a;
+}
+

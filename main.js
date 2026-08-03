@@ -1,9 +1,17 @@
 import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, shell, Tray, Menu, nativeImage, screen } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import fs from 'fs';
 import Store from 'electron-store';
+import { convertToMp3AndSave } from './src/main/ffmpegService.js';
+import { 
+    getLibraryVideosAsync, 
+    getRecordingThumbnailAsync, 
+    deleteRecordingAsync, 
+    archiveRecordingsAsync, 
+    reorganizeFilesAsync 
+} from './src/main/libraryService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,9 +19,49 @@ const __dirname = path.dirname(__filename);
 const store = new Store({
     defaults: {
         outputDirectory: '',
-        autoRecord: true
+        autoRecord: true,
+        organizationConfig: {
+            pathTemplate: '{year}-{month}-{day}',
+            fileNamingTemplate: '{timestamp}_{title}',
+            autoArchiveDays: 0,
+            archivePath: '',
+            compressionEnabled: false,
+            separateVideoFolder: false
+        },
+        tagCategories: []
     }
 });
+
+function resolveTemplate(template, metadata) {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+
+    const vars = {
+        '{year}': now.getFullYear(),
+        '{month}': pad(now.getMonth() + 1),
+        '{day}': pad(now.getDate()),
+        '{date}': `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+        '{timestamp}': `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`,
+        '{title}': (metadata.title || 'Sem_Titulo').replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, '_'),
+        '{week}': getWeekNumber(now),
+        '{hour}': pad(now.getHours()),
+        '{minute}': pad(now.getMinutes())
+    };
+
+    let result = template;
+    for (const [key, value] of Object.entries(vars)) {
+        result = result.replace(new RegExp(key.replace(/[{}]/g, '\\$&'), 'g'), value);
+    }
+    return result;
+}
+
+function getWeekNumber(date) {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
 
 let mainWindow;
 let settingsWindow;
@@ -24,6 +72,10 @@ const transcriptionQueue = [];
 let isProcessingQueue = false;
 let tray = null;
 let isQuitting = false;
+
+let psDaemonProcess = null;
+let psDaemonBuffer = '';
+let isScanningPending = false;
 
 // Logging System
 const logs = [];
@@ -215,6 +267,7 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
     isQuitting = true;
+    stopPowerShellDaemon();
 });
 
 app.on('window-all-closed', function () {
@@ -333,141 +386,27 @@ ipcMain.handle('get-file-buffer', async (event, filePath) => {
 });
 
 ipcMain.handle('delete-file', async (event, filePath) => {
-    try {
-        if (fs.existsSync(filePath)) {
-            const baseName = path.parse(filePath).name;
-            const dir = path.dirname(filePath);
-            
-            // Delete the file itself
-            fs.unlinkSync(filePath);
-            
-            // Also try to delete metadata json
-            const metadataPath = path.join(dir, baseName + '.json');
-            if (fs.existsSync(metadataPath)) {
-                fs.unlinkSync(metadataPath);
-            }
-
-            // Also try to delete the "other" version (mp3 or webm)
-            const otherExt = filePath.endsWith('.mp3') ? '.webm' : '.mp3';
-            const otherPath = path.join(dir, baseName + otherExt);
-            if (fs.existsSync(otherPath)) {
-                fs.unlinkSync(otherPath);
-            }
-
-            return { success: true };
-        }
-        return { success: false, error: 'Arquivo não encontrado.' };
-    } catch (error) {
-        console.error('Error deleting file:', error);
-        return { success: false, error: error.message };
-    }
+    return await deleteRecordingAsync(filePath);
 });
 
 ipcMain.handle('get-recording-thumbnail', async (event, folderName) => {
     const outputDir = store.get('outputDirectory');
-    if (!outputDir || !folderName) return null;
-
-    const imagesDir = path.join(outputDir, 'images');
-    try {
-        if (fs.existsSync(imagesDir)) {
-            const files = fs.readdirSync(imagesDir)
-                .filter(f => (f.endsWith('.jpg') || f.endsWith('.png')) && f.startsWith(folderName));
-            
-            if (files.length === 0) return null;
-
-            // Sort files to process them in chronological order
-            files.sort();
-
-            let selectedImage = null;
-            let largestImage = null;
-            let maxSize = 0;
-
-            for (const file of files) {
-                const fullPath = path.join(imagesDir, file);
-                const size = fs.statSync(fullPath).size;
-
-                if (size > maxSize) {
-                    maxSize = size;
-                    largestImage = file;
-                }
-
-                // Threshold: 100KB is usually enough to avoid purely black/empty screens
-                if (!selectedImage && size > 100000) {
-                    selectedImage = file;
-                    // We don't break yet because we want to know the largest just in case
-                }
-            }
-
-            // Use the first one that passed the threshold, 
-            // or the largest one if none did.
-            const finalImage = selectedImage || largestImage;
-
-            if (finalImage) {
-                const fullPath = path.join(imagesDir, finalImage);
-                const buffer = fs.readFileSync(fullPath);
-                return { success: true, buffer: new Uint8Array(buffer) };
-            }
-        }
-    } catch (error) {
-        console.error('Error fetching thumbnail:', error);
-    }
-    return null;
+    return await getRecordingThumbnailAsync(outputDir, folderName);
 });
 
 ipcMain.handle('get-library-videos', async () => {
     const outputDir = store.get('outputDirectory');
-    if (!outputDir || !fs.existsSync(outputDir)) return [];
-
-    const recordings = [];
-    
-    function scanDir(currentPath) {
-        const files = fs.readdirSync(currentPath);
-        files.forEach(file => {
-            const fullPath = path.join(currentPath, file);
-            const stat = fs.statSync(fullPath);
-            if (stat.isDirectory()) {
-                scanDir(fullPath);
-            } else if (file.endsWith('.mp3') || file.endsWith('.webm')) {
-                const baseName = path.parse(fullPath).name;
-                const metadataPath = path.join(currentPath, baseName + '.json');
-                let metadata = {};
-                if (fs.existsSync(metadataPath)) {
-                    try {
-                        metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-                    } catch (e) {
-                        console.error("Error reading metadata:", e);
-                    }
-                }
-
-                recordings.push({
-                    name: file,
-                    path: fullPath,
-                    date: stat.birthtime,
-                    metadata: metadata
-                });
-            }
-        });
-    }
-
-    try {
-        scanDir(outputDir);
-        return recordings.sort((a, b) => b.date - a.date);
-    } catch (err) {
-        console.error("Error scanning library:", err);
-        return [];
-    }
+    return await getLibraryVideosAsync(outputDir);
 });
 
 ipcMain.handle('save-file', async (event, { buffer, fileName, metadata, hasVideo }) => {
     const outputDir = store.get('outputDirectory');
     if (!outputDir) return { success: false, error: 'No output directory' };
 
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const dateDir = `${year}-${month}-${day}`;
-    const targetDir = path.join(outputDir, dateDir);
+    const orgConfig = store.get('organizationConfig');
+    const pathTemplate = orgConfig?.pathTemplate || '{year}-{month}-{day}';
+    const resolvedDir = resolveTemplate(pathTemplate, metadata);
+    const targetDir = path.join(outputDir, resolvedDir);
     
     if (!fs.existsSync(targetDir)) {
         fs.mkdirSync(targetDir, { recursive: true });
@@ -479,87 +418,16 @@ ipcMain.handle('save-file', async (event, { buffer, fileName, metadata, hasVideo
     const finalWebmPath = path.join(targetDir, fileName);
 
     try {
-        // 1. Save temp webm file
         fs.writeFileSync(tempWebmPath, Buffer.from(buffer));
-        
-        // 2. Convert to mp3 using ffmpeg with metadata
-        let metadataArgs = '';
-        if (metadata) {
-            let combinedTitle = metadata.title || 'Sem Título';
-            if (metadata.note) {
-                combinedTitle += ` - ${metadata.note.replace(/\r?\n/g, ' ')}`;
-            }
-            
-            const safeTitle = combinedTitle.replace(/"/g, '\\"');
-            metadataArgs += ` -metadata title="${safeTitle}"`;
-            
-            if (metadata.note) {
-                const safeNote = metadata.note.replace(/"/g, '\\"').replace(/\r?\n/g, ' ');
-                metadataArgs += ` -metadata comment="${safeNote}"`;
-            }
-        }
-
-        const ffmpegCommand = `ffmpeg -i "${tempWebmPath}" -vn -ab 128k -id3v2_version 3${metadataArgs} "${finalMp3Path}"`;
-        
-        return new Promise((resolve) => {
-            exec(ffmpegCommand, (error) => {
-                if (error) {
-                    console.error('Error converting to mp3:', error);
-                    if (fs.existsSync(tempWebmPath)) fs.unlinkSync(tempWebmPath);
-                    resolve({ success: false, error: 'Falha na conversão para MP3. Verifique se o ffmpeg está instalado.' });
-                } else {
-                    // Success converting to MP3
-                    
-                    // If hasVideo is true, we keep the webm as well
-                    if (hasVideo) {
-                        fs.renameSync(tempWebmPath, finalWebmPath);
-                    } else {
-                        // Otherwise delete temp webm
-                        if (fs.existsSync(tempWebmPath)) fs.unlinkSync(tempWebmPath);
-                    }
-
-                    // Save metadata if provided
-                    if (metadata) {
-                        const metadataPath = finalMp3Path.replace('.mp3', '.json');
-                        fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
-                        
-                        // Generate Markdown Sidecar for NotebookLM
-                        try {
-                            const mdPath = finalMp3Path.replace('.mp3', '.md');
-                            const date = new Date(metadata.date);
-                            const formattedDate = date.toLocaleString('pt-BR', { 
-                                day: '2-digit', month: '2-digit', year: 'numeric',
-                                hour: '2-digit', minute: '2-digit'
-                            });
-                            
-                            const durationSeconds = Math.floor(metadata.duration / 1000);
-                            const h = Math.floor(durationSeconds / 3600);
-                            const m = Math.floor((durationSeconds % 3600) / 60);
-                            const s = durationSeconds % 60;
-                            const formattedDuration = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-
-                            const mdContent = `# ${metadata.title || 'Sem Título'}
-
-**Data:** ${formattedDate}
-**Duração:** ${formattedDuration}
-
----
-
-## Notas da Reunião
-${metadata.note || '_Nenhuma nota registrada._'}
-`;
-                            fs.writeFileSync(mdPath, mdContent);
-                        } catch (mdError) {
-                            console.error('Error generating Markdown sidecar:', mdError);
-                        }
-                    }
-                    resolve({ success: true, path: hasVideo ? finalWebmPath : finalMp3Path });
-                }
-            });
+        return await convertToMp3AndSave({
+            tempWebmPath,
+            finalMp3Path,
+            finalWebmPath,
+            hasVideo,
+            metadata
         });
-
     } catch (error) {
-        console.error('Error saving/converting file:', error);
+        console.error('Error saving file:', error);
         return { success: false, error: error.message };
     }
 });
@@ -605,6 +473,82 @@ ipcMain.handle('discard-meeting-screenshots', async (event, folderName) => {
     return { success: false };
 });
 
+// ===== ORGANIZATION CONFIG IPCs =====
+ipcMain.handle('get-organization-config', () => {
+    return store.get('organizationConfig');
+});
+
+ipcMain.handle('update-organization-config', (event, config) => {
+    store.set('organizationConfig', config);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('config-updated', {
+            outputDirectory: store.get('outputDirectory'),
+            autoRecord: store.get('autoRecord')
+        });
+    }
+    return { success: true };
+});
+
+ipcMain.handle('preview-organization-path', (event, { template, title }) => {
+    const metadata = { title: title || 'Exemplo_Titulo' };
+    try {
+        const resolved = resolveTemplate(template, metadata);
+        const outputDir = store.get('outputDirectory') || 'C:\\Gravações';
+        return { success: true, path: path.join(outputDir, resolved) };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+
+ipcMain.handle('archive-recordings', async (event, { olderThanDays }) => {
+    const outputDir = store.get('outputDirectory');
+    const orgConfig = store.get('organizationConfig');
+    const archivePath = orgConfig?.archivePath;
+    return await archiveRecordingsAsync(outputDir, archivePath, olderThanDays);
+});
+
+ipcMain.handle('reorganize-files', async (event, { pathTemplate }) => {
+    const outputDir = store.get('outputDirectory');
+    return await reorganizeFilesAsync(outputDir, pathTemplate, resolveTemplate);
+});
+
+// ===== TAGGING SYSTEM IPCs =====
+ipcMain.handle('update-recording-tags', async (event, { filePath, tags, favorite }) => {
+    try {
+        const baseName = path.parse(filePath).name;
+        const dir = path.dirname(filePath);
+        const metadataPath = path.join(dir, baseName + '.json');
+
+        if (fs.existsSync(metadataPath)) {
+            const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+            if (tags !== undefined) metadata.tags = tags;
+            if (favorite !== undefined) metadata.favorite = favorite;
+            fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+        } else {
+            // Create new metadata file
+            const metadata = {
+                title: baseName,
+                date: new Date().toISOString(),
+                tags: tags || [],
+                favorite: favorite || false
+            };
+            fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+        }
+        return { success: true };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+
+ipcMain.handle('get-tag-categories', () => {
+    return store.get('tagCategories') || [];
+});
+
+ipcMain.handle('update-tag-categories', (event, categories) => {
+    store.set('tagCategories', categories);
+    return { success: true };
+});
+
 function cleanupOldImages() {
     const outputDir = store.get('outputDirectory');
     if (!outputDir) return;
@@ -642,8 +586,137 @@ function cleanupOldImages() {
     }
 }
 
+function startPowerShellDaemon() {
+    if (psDaemonProcess) return;
+
+    log('Iniciando daemon do PowerShell em segundo plano', 'info');
+
+    let scriptPath = path.join(__dirname, 'detectMeetings.ps1');
+    scriptPath = scriptPath.replace(/\bapp\.asar\b/g, 'app.asar.unpacked');
+
+    try {
+        psDaemonProcess = spawn('powershell', [
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', scriptPath
+        ], {
+            stdio: ['pipe', 'pipe', 'pipe']
+        });
+
+        psDaemonBuffer = '';
+
+        psDaemonProcess.stdout.on('data', (chunk) => {
+            psDaemonBuffer += chunk.toString('utf8');
+            
+            let newlineIndex;
+            while ((newlineIndex = psDaemonBuffer.indexOf('\n')) !== -1) {
+                const line = psDaemonBuffer.substring(0, newlineIndex).trim();
+                psDaemonBuffer = psDaemonBuffer.substring(newlineIndex + 1);
+                
+                if (line) {
+                    handleDaemonScanResult(line);
+                }
+            }
+        });
+
+        psDaemonProcess.stderr.on('data', (data) => {
+            const msg = data.toString('utf8').trim();
+            if (msg) {
+                log(`PowerShell Daemon (stderr): ${msg}`, 'debug');
+            }
+        });
+
+        psDaemonProcess.on('exit', (code, signal) => {
+            log(`Daemon do PowerShell encerrado (código: ${code}, sinal: ${signal})`, 'warn');
+            psDaemonProcess = null;
+            isScanningPending = false;
+            
+            if (!isQuitting) {
+                setTimeout(() => {
+                    log('Reiniciando daemon do PowerShell...', 'info');
+                    startPowerShellDaemon();
+                }, 3000);
+            }
+        });
+
+        psDaemonProcess.on('error', (err) => {
+            log(`Erro no daemon do PowerShell: ${err.message}`, 'error');
+            psDaemonProcess = null;
+            isScanningPending = false;
+        });
+
+    } catch (err) {
+        log(`Falha ao spawnar daemon do PowerShell: ${err.message}`, 'error');
+    }
+}
+
+function handleDaemonScanResult(stdout) {
+    isScanningPending = false;
+    try {
+        let jsonMatch = stdout.match(/\[.*\]/s);
+        let meetingTitles = [];
+        
+        if (jsonMatch) {
+            try {
+                meetingTitles = JSON.parse(jsonMatch[0]);
+            } catch (e) {
+                log(`Erro ao parsear JSON do daemon: ${e.message}`, 'error');
+            }
+        } else if (stdout.trim()) {
+            try {
+                const trimmed = stdout.trim();
+                if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+                    meetingTitles = [JSON.parse(trimmed)];
+                } else if (!trimmed.includes('\n')) {
+                    meetingTitles = [trimmed];
+                }
+            } catch (e) {
+                log(`Falha ao processar saída do daemon: ${stdout}`, 'debug');
+            }
+        }
+
+        if (meetingTitles.length === 0) {
+            log('Nenhuma reunião confirmada pelo script PowerShell', 'debug');
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('no-meeting-detected');
+            }
+            return;
+        }
+
+        const meetingsArray = Array.isArray(meetingTitles) ? meetingTitles : [meetingTitles];
+
+        if (meetingsArray.length > 0) {
+            const titles = meetingsArray.map(m => m.title).join(', ');
+            log(`Reunião detectada: ${titles}`, 'info');
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('meeting-detected', meetingsArray);
+            }
+        } else {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('no-meeting-detected');
+            }
+        }
+    } catch (parseError) {
+        log(`Erro ao processar resposta do daemon: ${parseError.message}`, 'error');
+    }
+}
+
+function stopPowerShellDaemon() {
+    if (psDaemonProcess) {
+        try {
+            if (psDaemonProcess.stdin.writable) {
+                psDaemonProcess.stdin.write('EXIT\n');
+            }
+            psDaemonProcess.kill();
+        } catch (e) { /* ignore */ }
+        psDaemonProcess = null;
+    }
+}
+
 function startDetectionLoop() {
-    log('Iniciando loop de detecção automática', 'debug');
+    log('Iniciando loop de detecção automática com daemon', 'debug');
+    startPowerShellDaemon();
+
     detectionInterval = setInterval(async () => {
         try {
             const sources = await desktopCapturer.getSources({ 
@@ -651,7 +724,6 @@ function startDetectionLoop() {
                 thumbnailSize: { width: 0, height: 0 }
             });
 
-            // Broaden the filter to include any window that might be a meeting
             const potentialMeetingWindows = sources.filter(source => {
                 const name = source.name.toLowerCase();
                 return name.includes('teams') || 
@@ -671,78 +743,18 @@ function startDetectionLoop() {
             }
 
             log(`Janelas potenciais encontradas: ${potentialMeetingWindows.length}`, 'debug');
-            potentialMeetingWindows.forEach(w => log(`Verificando janela: "${w.name}"`, 'debug'));
 
-            let scriptPath = path.join(__dirname, 'detectMeetings.ps1');
-            
-            // If running from asar, use the unpacked version
-            scriptPath = scriptPath.replace(/\bapp\.asar\b/g, 'app.asar.unpacked');
+            if (!psDaemonProcess) {
+                startPowerShellDaemon();
+            }
 
-            const command = `powershell -NoProfile -ExecutionPolicy Bypass -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; & '${scriptPath}'"`;
-
-            exec(command, { encoding: 'utf8' }, (error, stdout, stderr) => {
-                if (error) {
-                    log(`Erro ao executar PowerShell: ${error.message}`, 'error');
-                    return;
-                }
-                if (stderr) {
-                    log(`PowerShell Stderr: ${stderr}`, 'warn');
-                }
-
-                try {
-                    // Try to find a JSON array first
-                    let jsonMatch = stdout.match(/\[.*\]/s);
-                    let meetingTitles = [];
-                    
-                    if (jsonMatch) {
-                        try {
-                            meetingTitles = JSON.parse(jsonMatch[0]);
-                        } catch (e) {
-                            log(`Erro ao parsear JSON: ${e.message}`, 'error');
-                        }
-                    } else if (stdout.trim()) {
-                        // Fallback: if there's any non-empty output, try to parse it as a single string
-                        try {
-                            const trimmed = stdout.trim();
-                            if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
-                                meetingTitles = [JSON.parse(trimmed)];
-                            } else if (!trimmed.includes('\n')) {
-                                // Just a raw string
-                                meetingTitles = [trimmed];
-                            }
-                        } catch (e) {
-                            log(`Falha ao processar saída secundária: ${stdout}`, 'debug');
-                        }
-                    }
-
-                    if (meetingTitles.length === 0) {
-                        log('Nenhuma reunião confirmada pelo script PowerShell', 'debug');
-                        if (mainWindow && !mainWindow.isDestroyed()) {
-                            mainWindow.webContents.send('no-meeting-detected');
-                        }
-                        return;
-                    }
-
-                    const meetingsArray = Array.isArray(meetingTitles) ? meetingTitles : [meetingTitles];
-
-                    if (meetingsArray.length > 0) {
-                        const titles = meetingsArray.map(m => m.title).join(', ');
-                        log(`Reunião detectada: ${titles}`, 'info');
-                        if (mainWindow && !mainWindow.isDestroyed()) {
-                            mainWindow.webContents.send('meeting-detected', meetingsArray);
-                        }
-                    } else {
-                        if (mainWindow && !mainWindow.isDestroyed()) {
-                            mainWindow.webContents.send('no-meeting-detected');
-                        }
-                    }
-                } catch (parseError) {
-                    log(`Erro ao processar saída do PowerShell: ${parseError.message}`, 'error');
-                    log(`Saída bruta: ${stdout}`, 'debug');
-                }
-            });
+            if (psDaemonProcess && psDaemonProcess.stdin.writable && !isScanningPending) {
+                isScanningPending = true;
+                psDaemonProcess.stdin.write("SCAN\n");
+            }
         } catch (error) {
             log(`Erro no loop de detecção: ${error.message}`, 'error');
         }
     }, 5000);
 }
+

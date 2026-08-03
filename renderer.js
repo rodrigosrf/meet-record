@@ -1,3 +1,8 @@
+import { getAudioInputDevices, createMixedAudioStream } from './src/renderer/audioDeviceManager.js';
+import { openAudioRecording, stopPlaybackAudio } from './src/renderer/audioPlayer.js';
+import { initLibraryManager, renderLibraryUI } from './src/renderer/libraryManager.js';
+import { openTagEditorModal } from './src/renderer/tagEditor.js';
+
 const statusDot = document.getElementById('statusDot');
 const statusLabel = document.getElementById('statusLabel');
 const meetingTitle = document.getElementById('meetingTitle');
@@ -14,19 +19,10 @@ const recordingButtons = document.getElementById('recordingButtons');
 const pauseRecIcon = document.getElementById('pauseRecIcon');
 const resumeRecIcon = document.getElementById('resumeRecIcon');
 
-// New Transcription UI Elements
-const transcriptionContainer = document.getElementById('transcriptionContainer');
-const backgroundTasks = document.getElementById('backgroundTasks');
-const tasksCount = document.getElementById('tasksCount');
 const libraryBtn = document.getElementById('libraryBtn');
 const libraryPanel = document.getElementById('libraryPanel');
 const closeLibraryBtn = document.getElementById('closeLibraryBtn');
-const libraryContent = document.getElementById('libraryContent');
 const openFolderBtn = document.getElementById('openFolderBtn');
-const summaryModal = document.getElementById('summaryModal');
-const closeSummaryBtn = document.getElementById('closeSummaryBtn');
-const summaryContent = document.getElementById('summaryContent');
-const summaryTitle = document.getElementById('summaryTitle');
 const notesContainer = document.getElementById('notesContainer');
 const meetingNotes = document.getElementById('meetingNotes');
 const recordVideoCheckbox = document.getElementById('recordVideoCheckbox');
@@ -37,6 +33,7 @@ const logsContent = document.getElementById('logsContent');
 const autoRecordCheckbox = document.getElementById('autoRecordCheckbox');
 const titleInput = document.getElementById('titleInput');
 const editTitleBtn = document.getElementById('editTitleBtn');
+const audioDeviceSelect = document.getElementById('audioDeviceSelect');
 
 // Audio Context for Visualizer
 let audioCtx;
@@ -52,20 +49,21 @@ let isManualRecording = false;
 let startTime;
 let timerInterval;
 let currentMeetingHandle = "";
-let lastDetectedMeetings = []; // Store all meetings from last cycle
-let manuallyStoppedMeetings = new Map(); // Handle -> lastSeenTimestamp
-const STOPPED_MEETING_COOLDOWN = 2 * 60 * 1000; // 2 minutes absence to clear from ignore list
-let allVideos = [];
-let currentFilter = 'all';
-let searchQuery = '';
+let lastDetectedMeetings = [];
+let manuallyStoppedMeetings = new Map();
+const STOPPED_MEETING_COOLDOWN = 2 * 60 * 1000;
 let currentMeetingFolder = "";
 let currentMeetingName = "";
-let lastScreenshotData = null;
 let isRecordingVideo = false;
 let config = {};
 let isTitleManuallyEdited = false;
+let activeStreamCleanup = null;
+let globalStream = null;
+let isPaused = false;
+let totalPausedTime = 0;
+let lastPauseStart = 0;
 
-// Initialize
+// Initialize App
 async function init() {
     config = await window.electronAPI.getConfig();
     if (config.outputDirectory) {
@@ -75,72 +73,48 @@ async function init() {
 
     if (config.autoRecord !== undefined) {
         autoRecordCheckbox.checked = config.autoRecord;
-        const offLabel = document.querySelector('.mode-label.auto-off-mode');
-        const onLabel = document.querySelector('.mode-label.auto-on-mode');
-        if (config.autoRecord) {
-            offLabel.classList.remove('active');
-            onLabel.classList.add('active');
-        } else {
-            offLabel.classList.add('active');
-            onLabel.classList.remove('active');
-        }
+        updateAutoRecordModeUI(config.autoRecord);
     }
 
-    settingsBtn.addEventListener('click', () => {
-        window.electronAPI.openSettings();
+    // Populate Audio Hardware Devices
+    await loadAudioDevices();
+
+    // Init Modules
+    await initLibraryManager({
+        onOpenRecording: (filePath) => openRecording(filePath),
+        onDeleteRecording: (filePath) => deleteRecording(filePath),
+        onOpenTagEditor: (filePath, tags, isFav) => openTagEditorModal(filePath, tags, isFav, {
+            onSaveSuccess: () => renderLibraryUI({
+                onOpenRecording: openRecording,
+                onDeleteRecording: deleteRecording,
+                onOpenTagEditor: openTagEditorModal
+            })
+        })
     });
 
-    stopBtn.addEventListener('click', () => {
-        stopRecording(true);
-    });
+    // Event Listeners
+    settingsBtn.addEventListener('click', () => window.electronAPI.openSettings());
+    stopBtn.addEventListener('click', () => stopRecording(true));
+    startBtn.addEventListener('click', () => handleManualStart());
+    pauseBtn.addEventListener('click', () => togglePause());
 
-    startBtn.addEventListener('click', () => {
-        handleManualStart();
-    });
+    libraryBtn.addEventListener('click', () => toggleLibrary());
+    closeLibraryBtn.addEventListener('click', () => libraryPanel.classList.remove('active'));
+    openFolderBtn.addEventListener('click', () => window.electronAPI.openOutputDirectory());
 
-    pauseBtn.addEventListener('click', () => {
-        togglePause();
-    });
-
-    libraryBtn.addEventListener('click', () => {
-        toggleLibrary();
-    });
-
-    closeLibraryBtn.addEventListener('click', () => {
-        libraryPanel.classList.remove('active');
-    });
-
-    openFolderBtn.addEventListener('click', () => {
-        window.electronAPI.openOutputDirectory();
-    });
-
-    logsBtn.addEventListener('click', () => {
-        toggleLogs();
-    });
-
-    closeLogsBtn.addEventListener('click', () => {
-        logsPanel.classList.remove('active');
-    });
-
-    // Library Search
-    const librarySearch = document.getElementById('librarySearch');
-    librarySearch.addEventListener('input', (e) => {
-        searchQuery = e.target.value.toLowerCase();
-        renderLibrary(true);
-    });
+    logsBtn.addEventListener('click', () => toggleLogs());
+    closeLogsBtn.addEventListener('click', () => logsPanel.classList.remove('active'));
 
     window.electronAPI.onMeetingDetected(async (meetings) => {
         const now = Date.now();
         lastDetectedMeetings = meetings;
         
-        // Update last seen timestamp for any ignored meeting that is still present
         for (const m of meetings) {
             if (manuallyStoppedMeetings.has(m.handle)) {
                 manuallyStoppedMeetings.set(m.handle, now);
             }
         }
 
-        // Clean up old ignored meetings (not seen for > COOLDOWN)
         for (const [handle, lastSeen] of manuallyStoppedMeetings.entries()) {
             if (now - lastSeen > STOPPED_MEETING_COOLDOWN) {
                 manuallyStoppedMeetings.delete(handle);
@@ -148,11 +122,9 @@ async function init() {
         }
 
         if (!isRecording) {
-            if (!config.autoRecord) return; // Skip automatic start if disabled
+            if (!config.autoRecord) return;
             
-            // Filter out meetings that were manually stopped and are still active
             const availableMeetings = meetings.filter(m => !manuallyStoppedMeetings.has(m.handle));
-            
             if (availableMeetings.length > 0) {
                 const bestMatch = availableMeetings.find(m => m.title.includes('Reuni') || m.title.includes('Meeting')) || availableMeetings[0];
                 handleMeetingDetected(bestMatch.title, bestMatch.handle);
@@ -162,7 +134,6 @@ async function init() {
             if (!currentMeeting) {
                 stopRecording();
             } else if (!isTitleManuallyEdited && titleInput.classList.contains('hidden') && currentMeeting.title !== currentMeetingName) {
-                // Only auto-update if not manually edited and not currently being edited
                 currentMeetingName = currentMeeting.title;
                 meetingTitle.textContent = currentMeetingName;
             }
@@ -170,7 +141,6 @@ async function init() {
     });
 
     window.electronAPI.onNoMeetingDetected(() => {
-        // We don't clear manuallyStoppedMeetings here immediately to handle detection gaps
         if (isRecording && !isManualRecording) {
             stopRecording();
         }
@@ -184,39 +154,22 @@ async function init() {
         }
         if (config.autoRecord !== undefined) {
             autoRecordCheckbox.checked = config.autoRecord;
-            const offLabel = document.querySelector('.mode-label.auto-off-mode');
-            const onLabel = document.querySelector('.mode-label.auto-on-mode');
-            if (config.autoRecord) {
-                offLabel.classList.remove('active');
-                onLabel.classList.add('active');
-            } else {
-                offLabel.classList.add('active');
-                onLabel.classList.remove('active');
-            }
+            updateAutoRecordModeUI(config.autoRecord);
         }
     });
 
     window.electronAPI.onStartManualRecording(() => {
-        if (!isRecording) {
-            handleManualStart();
-        }
+        if (!isRecording) handleManualStart();
     });
 
     window.electronAPI.onStopRecording(() => {
-        if (isRecording) {
-            stopRecording(true);
-        }
+        if (isRecording) stopRecording(true);
     });
 
     window.electronAPI.onTriggerManualScreenshot(() => {
         if (isRecording) {
             captureScreenshot();
-            
-            // Show notification for feedback when app is hidden
-            const n = new Notification("Meet Record", {
-                body: "Print manual capturado!",
-                silent: true
-            });
+            const n = new Notification("Meet Record", { body: "Print manual capturado!", silent: true });
             setTimeout(() => n.close(), 2000);
         }
     });
@@ -234,34 +187,17 @@ async function init() {
     });
 
     autoRecordCheckbox.addEventListener('change', () => {
-        const offLabel = document.querySelector('.mode-label.auto-off-mode');
-        const onLabel = document.querySelector('.mode-label.auto-on-mode');
         const isAuto = autoRecordCheckbox.checked;
-        
-        if (isAuto) {
-            offLabel.classList.remove('active');
-            onLabel.classList.add('active');
-        } else {
-            offLabel.classList.add('active');
-            onLabel.classList.remove('active');
-        }
-        
+        updateAutoRecordModeUI(isAuto);
         window.electronAPI.updateConfig({ autoRecord: isAuto });
     });
 
-    window.electronAPI.onTogglePause(() => {
-        togglePause();
-    });
+    window.electronAPI.onTogglePause(() => togglePause());
 
-    window.electronAPI.onNewLog((log) => {
-        addLogToUI(log);
-    });
-
-    // Initial Logs Fetch
+    window.electronAPI.onNewLog((log) => addLogToUI(log));
     const initialLogs = await window.electronAPI.getLogs();
     initialLogs.forEach(log => addLogToUI(log, false));
 
-    // Title Editing Events
     meetingTitle.addEventListener('click', enterEditMode);
     editTitleBtn.addEventListener('click', enterEditMode);
     
@@ -269,15 +205,36 @@ async function init() {
         if (e.key === 'Enter') exitEditMode(true);
         if (e.key === 'Escape') exitEditMode(false);
     });
+    titleInput.addEventListener('blur', () => exitEditMode(true));
+}
+
+async function loadAudioDevices() {
+    if (!audioDeviceSelect) return;
+    const devices = await getAudioInputDevices();
     
-    titleInput.addEventListener('blur', () => {
-        exitEditMode(true);
+    audioDeviceSelect.innerHTML = '<option value="none">🔊 Apenas Outras Pessoas (Sem meu Mic)</option>';
+    devices.forEach((device, index) => {
+        const option = document.createElement('option');
+        option.value = device.deviceId;
+        option.textContent = `🎙️ Incluir meu Mic: ${device.label || 'Microfone ' + (index + 1)}`;
+        audioDeviceSelect.appendChild(option);
     });
+}
+
+function updateAutoRecordModeUI(isAuto) {
+    const offLabel = document.querySelector('.mode-label.auto-off-mode');
+    const onLabel = document.querySelector('.mode-label.auto-on-mode');
+    if (isAuto) {
+        offLabel?.classList.remove('active');
+        onLabel?.classList.add('active');
+    } else {
+        offLabel?.classList.add('active');
+        onLabel?.classList.remove('active');
+    }
 }
 
 function enterEditMode() {
     if (meetingTitle.textContent === "Modo Player" || meetingTitle.textContent === "Processando arquivo") return;
-    
     titleInput.value = meetingTitle.textContent === "Nenhuma reunião detectada" ? "" : meetingTitle.textContent;
     meetingTitle.classList.add('hidden');
     editTitleBtn.classList.add('hidden');
@@ -295,7 +252,6 @@ function exitEditMode(save) {
             isTitleManuallyEdited = true;
         }
     }
-    
     titleInput.classList.add('hidden');
     meetingTitle.classList.remove('hidden');
     editTitleBtn.classList.remove('hidden');
@@ -305,7 +261,11 @@ async function toggleLibrary() {
     logsPanel.classList.remove('active');
     libraryPanel.classList.toggle('active');
     if (libraryPanel.classList.contains('active')) {
-        renderLibrary();
+        renderLibraryUI({
+            onOpenRecording: openRecording,
+            onDeleteRecording: deleteRecording,
+            onOpenTagEditor: openTagEditorModal
+        });
     }
 }
 
@@ -315,9 +275,10 @@ async function toggleLogs() {
 }
 
 function addLogToUI(log, scroll = true) {
+    const logsContent = document.getElementById('logsContent');
+    if (!logsContent) return;
     const entry = document.createElement('div');
     entry.className = `log-entry ${log.type}`;
-    
     entry.innerHTML = `
         <div class="log-header">
             <span class="log-time">${log.timestamp}</span>
@@ -325,126 +286,10 @@ function addLogToUI(log, scroll = true) {
         </div>
         <div class="log-msg">${log.message}</div>
     `;
-    
     logsContent.appendChild(entry);
-    
-    // Keep only last 100 in UI too
     if (logsContent.children.length > 100) {
         logsContent.removeChild(logsContent.firstChild);
     }
-    
-    // Automatic scroll disabled per user request
-}
-
-async function renderLibrary(skipFetch = false) {
-    if (!skipFetch) {
-        libraryContent.innerHTML = '<p style="text-align:center; opacity:0.5;">Buscando arquivos...</p>';
-        allVideos = await window.electronAPI.getLibraryVideos();
-    }
-    
-    if (allVideos.length === 0) {
-        libraryContent.innerHTML = '<p style="text-align:center; opacity:0.5;">Nenhuma gravação encontrada.</p>';
-        return;
-    }
-
-    let filtered = allVideos.filter(rec => rec.name.toLowerCase().includes(searchQuery));
-
-    if (filtered.length === 0) {
-        libraryContent.innerHTML = '<p style="text-align:center; opacity:0.5;">Nenhum resultado encontrado.</p>';
-        return;
-    }
-
-    const groups = groupVideosByDate(filtered);
-    libraryContent.innerHTML = '';
-    
-    for (const dateLabel of Object.keys(groups)) {
-        const groupHeader = document.createElement('div');
-        groupHeader.className = 'date-group-header';
-        groupHeader.textContent = dateLabel;
-        libraryContent.appendChild(groupHeader);
-
-        const groupContainer = document.createElement('div');
-        groupContainer.className = 'date-group';
-        
-        for (const [index, rec] of groups[dateLabel].entries()) {
-            const item = document.createElement('div');
-            item.className = 'library-item';
-            
-            const dateStr = new Date(rec.date).toLocaleString('pt-BR', {
-                hour: '2-digit', minute: '2-digit'
-            });
-
-            const order = groups[dateLabel].length - index;
-
-            // Thumbnail Logic
-            let thumbnailHtml = `
-                <div class="lib-item-thumbnail">
-                    <div class="no-thumb">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-                    </div>
-                </div>`;
-
-            if (rec.metadata && rec.metadata.folderName) {
-                const thumbResult = await window.electronAPI.getRecordingThumbnail(rec.metadata.folderName);
-                if (thumbResult && thumbResult.success) {
-                    const blob = new Blob([thumbResult.buffer], { type: 'image/jpeg' });
-                    const thumbUrl = URL.createObjectURL(blob);
-                    thumbnailHtml = `
-                        <div class="lib-item-thumbnail">
-                            <img src="${thumbUrl}" alt="Thumbnail">
-                        </div>`;
-                }
-            }
-
-            const isVideo = rec.path.endsWith('.webm');
-            const buttonText = isVideo ? 'Assistir' : 'Ouvir';
-            const badgeText = isVideo ? 'WEBM' : 'MP3';
-
-            item.innerHTML = `
-                ${thumbnailHtml}
-                <button class="lib-item-delete" onclick="deleteRecording('${rec.path.replace(/\\/g, '\\\\')}')" title="Excluir Gravação">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                </button>
-                <div class="lib-item-order">${order}</div>
-                <div class="lib-item-info">
-                    <h4>${rec.name}</h4>
-                    <span>${dateStr}</span>
-                    ${rec.metadata && rec.metadata.note ? `<p class="lib-item-notes">${rec.metadata.note}</p>` : ''}
-                </div>
-                <div class="lib-item-actions">
-                     <button class="btn-small" onclick="openRecording('${rec.path.replace(/\\/g, '\\\\')}')">${buttonText}</button>
-                     <span class="badge badge-success">${badgeText}</span>
-                </div>
-            `;
-            groupContainer.appendChild(item);
-        }
-        libraryContent.appendChild(groupContainer);
-    }
-}
-
-function groupVideosByDate(videos) {
-    const groups = {};
-    const today = new Date().setHours(0,0,0,0);
-    const yesterday = new Date(today - 86400000).getTime();
-    
-    videos.forEach(video => {
-        const videoDate = new Date(video.date);
-        const videoDay = new Date(video.date).setHours(0,0,0,0);
-        
-        let label = '';
-        if (videoDay === today) label = 'Hoje';
-        else if (videoDay === yesterday) label = 'Ontem';
-        else {
-            label = videoDate.toLocaleDateString('pt-BR', { 
-                day: '2-digit', month: 'long' 
-            });
-        }
-        
-        if (!groups[label]) groups[label] = [];
-        groups[label].push(video);
-    });
-    
-    return groups;
 }
 
 async function handleManualStart() {
@@ -461,10 +306,8 @@ async function handleManualStart() {
     startBtn.querySelector('span').textContent = "Iniciando...";
     const hasVideo = recordVideoCheckbox.checked;
 
-    // Stop playback if active
-    if (playbackAudio) {
-        stopPlayback();
-    }
+    stopPlaybackAudio();
+    updatePlaybackControlsUI(false);
 
     isManualRecording = true;
     isTitleManuallyEdited = false;
@@ -501,14 +344,11 @@ async function handleManualStart() {
 async function handleMeetingDetected(title, handle) {
     if (isRecording || isStarting) return;
 
-    // Stop playback if active
-    if (playbackAudio) {
-        stopPlayback();
-    }
+    stopPlaybackAudio();
+    updatePlaybackControlsUI(false);
 
     isStarting = true;
     isManualRecording = false;
-    // Don't overwrite if manually edited before detection
     if (!isTitleManuallyEdited) {
         currentMeetingName = title;
         meetingTitle.textContent = title;
@@ -522,10 +362,7 @@ async function handleMeetingDetected(title, handle) {
     }
 
     configAlert.classList.add('hidden');
-    
     const sources = await window.electronAPI.getSources();
-    
-    // Try to match by name or look for Teams
     const source = sources.find(s => s.name === title) || sources.find(s => s.name.includes(title) || title.includes(s.name));
     
     if (source) {
@@ -543,7 +380,6 @@ async function startRecording(sourceId, handle, hasVideo = false) {
     const timestamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
     const safeTitle = currentMeetingName.replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, '_');
     currentMeetingFolder = `${timestamp}_${safeTitle}`;
-    lastScreenshotData = null; // Reset for new meeting
     isRecordingVideo = hasVideo;
 
     try {
@@ -561,47 +397,50 @@ async function startRecording(sourceId, handle, hasVideo = false) {
             }
         };
 
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        const rawStream = await navigator.mediaDevices.getUserMedia(constraints);
         
+        // Audio Hardware Device Mixing
+        const selectedDeviceId = audioDeviceSelect ? audioDeviceSelect.value : 'none';
+        const { combinedStream, cleanup } = await createMixedAudioStream({
+            systemStream: rawStream,
+            selectedDeviceId,
+            includeMic: selectedDeviceId !== 'none'
+        });
+        
+        activeStreamCleanup = cleanup;
+        globalStream = combinedStream;
+
         // Setup Visualizer
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         analyser = audioCtx.createAnalyser();
-        const source = audioCtx.createMediaStreamSource(stream);
+        const source = audioCtx.createMediaStreamSource(combinedStream);
         source.connect(analyser);
-        analyser.fftSize = 256; // Increased for more detail
+        analyser.fftSize = 256;
         analyser.smoothingTimeConstant = 0.8;
-        const bufferLength = analyser.frequencyBinCount;
-        dataArray = new Uint8Array(bufferLength);
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-        // Start animation loop
         drawVisualizer();
 
-        // Choose stream and mimeType
         let mimeType = 'audio/webm;codecs=opus';
-        let streamToRecord = new MediaStream(stream.getAudioTracks());
+        let streamToRecord = new MediaStream(combinedStream.getAudioTracks());
 
         if (hasVideo) {
             mimeType = 'video/webm;codecs=vp9,opus';
-            streamToRecord = stream;
+            streamToRecord = combinedStream;
         }
 
         mediaRecorder = new MediaRecorder(streamToRecord, { mimeType });
+        recordedChunks = [];
 
         mediaRecorder.ondataavailable = (e) => {
-            if (e.data.size > 0) {
-                recordedChunks.push(e.data);
-            }
+            if (e.data.size > 0) recordedChunks.push(e.data);
         };
 
-        mediaRecorder.onstop = () => {
-            saveRecording();
-        };
-
+        mediaRecorder.onstop = () => saveRecording();
         mediaRecorder.start();
+
         isRecording = true;
         isStarting = false;
-        
-        // Disable mode toggle during recording
         recordVideoCheckbox.disabled = true;
         
         mainCard.classList.add('recording');
@@ -624,10 +463,8 @@ async function startRecording(sourceId, handle, hasVideo = false) {
         resumeRecIcon.classList.add('hidden');
         statusDot.classList.remove('paused');
         
-        // Setup Screenshot Stream
-        setupScreenshotStream(stream);
+        setupScreenshotStream(combinedStream);
         
-        // Show Notes and Notification
         notesContainer.classList.remove('hidden');
         meetingNotes.value = "";
         
@@ -637,7 +474,6 @@ async function startRecording(sourceId, handle, hasVideo = false) {
         });
         setTimeout(() => n.close(), 3000);
 
-        // Show Overlay
         window.electronAPI.showOverlay();
         window.electronAPI.syncOverlay({ isPaused: false, timer: "00:00:00" });
         
@@ -655,15 +491,8 @@ async function startRecording(sourceId, handle, hasVideo = false) {
 function stopRecording(isManual = false) {
     if (mediaRecorder && isRecording) {
         if (isManual) {
-            // Ignore ALL currently detected meetings when stopped manually
-            // to handle cases with multiple Teams windows for the same meeting
-            lastDetectedMeetings.forEach(m => {
-                manuallyStoppedMeetings.set(m.handle, Date.now());
-            });
-            // Also ensure the one we were recording is ignored even if not in lastDetected
-            if (currentMeetingHandle) {
-                manuallyStoppedMeetings.set(currentMeetingHandle, Date.now());
-            }
+            lastDetectedMeetings.forEach(m => manuallyStoppedMeetings.set(m.handle, Date.now()));
+            if (currentMeetingHandle) manuallyStoppedMeetings.set(currentMeetingHandle, Date.now());
         }
         
         mediaRecorder.stop();
@@ -671,6 +500,11 @@ function stopRecording(isManual = false) {
         isStarting = false;
         isTitleManuallyEdited = false;
         
+        if (activeStreamCleanup) {
+            activeStreamCleanup();
+            activeStreamCleanup = null;
+        }
+
         const tracks = mediaRecorder.stream.getTracks();
         tracks.forEach(track => track.stop());
         
@@ -684,12 +518,9 @@ function stopRecording(isManual = false) {
         startBtn.disabled = false;
         startBtn.querySelector('span').textContent = "Iniciar Gravação Manual";
         
-        // Re-enable mode toggle
         recordVideoCheckbox.disabled = false;
-        
         clearInterval(timerInterval);
         
-        // Cleanup screenshot video
         const video = document.getElementById('screenshotVideo');
         if (video) {
             video.srcObject = null;
@@ -697,14 +528,10 @@ function stopRecording(isManual = false) {
         }
         globalStream = null;
         
-        // Hide Notes
         notesContainer.classList.add('hidden');
-
-        // Stop visualizer
         cancelAnimationFrame(animationId);
         resetVisualizer();
 
-        // Hide Overlay
         window.electronAPI.hideOverlay();
     }
 }
@@ -723,8 +550,6 @@ function togglePause() {
         pauseBtn.querySelector('span').textContent = "Retomar";
         pauseRecIcon.classList.add('hidden');
         resumeRecIcon.classList.remove('hidden');
-        
-        // Automatic screenshots removed
     } else {
         mediaRecorder.resume();
         isPaused = false;
@@ -740,40 +565,33 @@ function togglePause() {
         setupScreenshotStream(globalStream);
     }
 
-    // Sync with Overlay
     window.electronAPI.syncOverlay({ isPaused: isPaused });
 }
 
 function drawVisualizer() {
     animationId = requestAnimationFrame(drawVisualizer);
-    
     const canvas = document.getElementById('visualizerCanvas');
-    if (!canvas) return;
+    if (!canvas || !analyser) return;
     
     const ctx = canvas.getContext('2d');
     const width = canvas.width = canvas.offsetWidth;
     const height = canvas.height = canvas.offsetHeight;
     
     analyser.getByteFrequencyData(dataArray);
-
     ctx.clearRect(0, 0, width, height);
     
     const barWidth = (width / dataArray.length) * 2.5;
     let barHeight;
     let x = 0;
 
-    // Create Gradient
     const gradient = ctx.createLinearGradient(0, height, 0, 0);
-    gradient.addColorStop(0, '#38bdf8'); // var(--accent-color)
-    gradient.addColorStop(1, '#818cf8'); // Lighter indigo
+    gradient.addColorStop(0, '#38bdf8');
+    gradient.addColorStop(1, '#818cf8');
 
     for(let i = 0; i < dataArray.length; i++) {
         barHeight = (dataArray[i] / 255) * height;
-
-        // Draw with some glow/softness
         ctx.fillStyle = gradient;
         
-        // Rounded bars logic
         const radius = barWidth / 2;
         const barX = x;
         const barY = height - barHeight;
@@ -782,14 +600,6 @@ function drawVisualizer() {
             ctx.beginPath();
             ctx.roundRect(barX, barY, barWidth - 2, barHeight, [radius, radius, 0, 0]);
             ctx.fill();
-            
-            // Subtle Glow for higher peaks
-            if (dataArray[i] > 150) {
-                ctx.shadowBlur = 15;
-                ctx.shadowColor = '#38bdf8';
-            } else {
-                ctx.shadowBlur = 0;
-            }
         }
 
         x += barWidth + 1;
@@ -819,12 +629,8 @@ async function saveRecording() {
         fileName = `${timestamp}_${safeTitle}.webm`;
     }
 
-    // Short recording check (Auto-delete)
     const duration = Date.now() - startTime;
-    if (duration < 60000) { // Less than 1 minute
-        console.log("Recording too short, discarding...");
-        
-        // Discard screenshots as well
+    if (duration < 60000) {
         if (currentMeetingFolder) {
             window.electronAPI.discardMeetingScreenshots(currentMeetingFolder);
         }
@@ -854,8 +660,12 @@ async function saveRecording() {
     if (result.success) {
         statusLabel.textContent = "Aguardando Reunião...";
         meetingTitle.textContent = "Nenhuma reunião detectada";
-        meetingTime.textContent = "00:00:00"; // Reset time display
-        renderLibrary();
+        meetingTime.textContent = "00:00:00";
+        renderLibraryUI({
+            onOpenRecording: openRecording,
+            onDeleteRecording: deleteRecording,
+            onOpenTagEditor: openTagEditorModal
+        });
 
         const n = new Notification("Meet Record", {
             body: "Gravação salva com sucesso!",
@@ -881,7 +691,6 @@ function updateTimer() {
     meetingTime.textContent = 
         `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
-    // Sync with Overlay
     window.electronAPI.syncOverlay({ timer: meetingTime.textContent });
 }
 
@@ -900,8 +709,6 @@ async function captureScreenshot() {
 
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        // Manual capture always proceeds without similarity check
         
         canvas.toBlob(async (blob) => {
             if (!blob) return;
@@ -921,151 +728,70 @@ async function captureScreenshot() {
     }
 }
 
-let globalStream = null;
-
 async function setupScreenshotStream(stream) {
     globalStream = stream;
-    const video = document.createElement('video');
+    const video = document.getElementById('screenshotVideo') || document.createElement('video');
     video.id = 'screenshotVideo';
     video.srcObject = stream;
     video.muted = true;
     video.style.display = 'none';
-    document.body.appendChild(video);
+    if (!document.getElementById('screenshotVideo')) {
+        document.body.appendChild(video);
+    }
     
-    video.onloadedmetadata = () => {
-        video.play();
-    };
+    video.onloadedmetadata = () => video.play();
 }
-
-let playbackAudio = null;
-let playbackInterval = null;
 
 async function openRecording(filePath) {
-    try {
-        if (isRecording) {
-            alert("Não é possível reproduzir enquanto uma gravação está em andamento.");
-            return;
-        }
-
-        if (filePath.endsWith('.webm')) {
-            window.electronAPI.openFile(filePath);
-            return;
-        }
-
-        const result = await window.electronAPI.getFileBuffer(filePath);
-        if (result.success) {
-            // Clean up previous playback
-            stopPlayback();
-
-            const blob = new Blob([result.buffer], { type: 'audio/mp3' });
-            const url = URL.createObjectURL(blob);
-            
-            playbackAudio = new Audio(url);
-            
-            const playbackControls = document.getElementById('playbackControls');
-            const cardControls = document.getElementById('cardControls');
-            const playerFileName = document.getElementById('playerFileName');
-            const playerRange = document.getElementById('playerRange');
-            const playPauseBtn = document.getElementById('playPauseBtn');
-            const stopPlaybackBtn = document.getElementById('stopPlaybackBtn');
-            const playIcon = document.getElementById('playIcon');
-            const pauseIcon = document.getElementById('pauseIcon');
-            
-            // Set UI state
-            const fileName = filePath.split(/[\\/]/).pop();
-            playerFileName.textContent = fileName;
-            statusLabel.textContent = "Reproduzindo...";
-            meetingTitle.textContent = "Modo Player";
-            
-            cardControls.classList.add('hidden');
-            playbackControls.classList.remove('hidden');
-            mainCard.classList.add('playing');
-            
-            playbackAudio.onloadedmetadata = () => {
-                playerRange.max = playbackAudio.duration;
-            };
-
-            playbackAudio.ontimeupdate = () => {
-                playerRange.value = playbackAudio.currentTime;
-            };
-
-            playbackAudio.onended = () => {
-                stopPlayback();
-            };
-
-            playPauseBtn.onclick = () => {
-                if (playbackAudio.paused) {
-                    playbackAudio.play();
-                    playIcon.classList.add('hidden');
-                    pauseIcon.classList.remove('hidden');
-                } else {
-                    playbackAudio.pause();
-                    playIcon.classList.remove('hidden');
-                    pauseIcon.classList.add('hidden');
-                }
-            };
-
-            playerRange.oninput = () => {
-                playbackAudio.currentTime = playerRange.value;
-            };
-
-            stopPlaybackBtn.onclick = () => {
-                stopPlayback();
-            };
-
-            // Start playing
-            playbackAudio.play();
-            playIcon.classList.add('hidden');
-            pauseIcon.classList.remove('hidden');
-            
-        } else {
-            alert(result.error);
-        }
-    } catch (err) {
-        console.error("Erro ao carregar áudio:", err);
-        alert("Erro ao carregar arquivo de áudio.");
+    if (isRecording) {
+        alert("Não é possível reproduzir enquanto uma gravação está em andamento.");
+        return;
     }
+    updatePlaybackControlsUI(true);
+    statusLabel.textContent = "Reproduzindo...";
+    meetingTitle.textContent = "Modo Player";
+
+    openAudioRecording(filePath, {
+        onStateChange: (state) => {
+            if (state === 'stopped' || state === 'ended') {
+                updatePlaybackControlsUI(false);
+                statusLabel.textContent = "Aguardando Reunião...";
+                meetingTitle.textContent = "Nenhuma reunião detectada";
+                meetingTime.textContent = "00:00:00";
+            }
+        }
+    });
 }
 
-function stopPlayback() {
-    if (playbackAudio) {
-        playbackAudio.pause();
-        const url = playbackAudio.src;
-        if (url.startsWith('blob:')) {
-            URL.revokeObjectURL(url);
-        }
-        playbackAudio = null;
-    }
-
+function updatePlaybackControlsUI(active) {
     const playbackControls = document.getElementById('playbackControls');
     const cardControls = document.getElementById('cardControls');
-    const playIcon = document.getElementById('playIcon');
-    const pauseIcon = document.getElementById('pauseIcon');
-
-    playbackControls.classList.add('hidden');
-    cardControls.classList.remove('hidden');
-    mainCard.classList.remove('playing');
-    
-    statusLabel.textContent = "Aguardando Reunião...";
-    meetingTitle.textContent = "Nenhuma reunião detectada";
-    meetingTime.textContent = "00:00:00";
-    
-    playIcon.classList.remove('hidden');
-    pauseIcon.classList.add('hidden');
+    if (playbackControls && cardControls) {
+        if (active) {
+            playbackControls.classList.remove('hidden');
+            cardControls.classList.add('hidden');
+            mainCard.classList.add('playing');
+        } else {
+            playbackControls.classList.add('hidden');
+            cardControls.classList.remove('hidden');
+            mainCard.classList.remove('playing');
+        }
+    }
 }
 
 async function deleteRecording(filePath) {
     if (confirm("Tem certeza que deseja excluir esta gravação? Esta ação não pode ser desfeita.")) {
         const result = await window.electronAPI.deleteFile(filePath);
         if (result.success) {
-            renderLibrary();
+            renderLibraryUI({
+                onOpenRecording: openRecording,
+                onDeleteRecording: deleteRecording,
+                onOpenTagEditor: openTagEditorModal
+            });
         } else {
             alert(`Erro ao excluir: ${result.error}`);
         }
     }
 }
-
-window.openRecording = openRecording;
-window.deleteRecording = deleteRecording;
 
 init();
