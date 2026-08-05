@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     updateConfig: (config) => ipcRenderer.invoke('update-config', config),
     openOutputDirectory: () => ipcRenderer.invoke('open-output-directory'),
     openFile: (filePath) => ipcRenderer.invoke('open-file', filePath),
+    openFileLocation: (filePath) => ipcRenderer.invoke('open-file-location', filePath),
     getFileBuffer: (filePath) => ipcRenderer.invoke('get-file-buffer', filePath),
     deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
     saveScreenshot: (data) => ipcRenderer.invoke('save-screenshot', data),

@@ -42,6 +42,8 @@ let dataArray;
 let animationId;
 let silenceCounter = 0;
 let isAudioSilentWarningShown = false;
+let silenceStartTime = null;
+let silenceCheckInterval = null;
 
 let mediaRecorder;
 let recordedChunks = [];
@@ -103,6 +105,7 @@ async function init() {
     libraryBtn.addEventListener('click', () => toggleLibrary());
     closeLibraryBtn.addEventListener('click', () => libraryPanel.classList.remove('active'));
     openFolderBtn.addEventListener('click', () => window.electronAPI.openOutputDirectory());
+    document.getElementById('openLibraryFolderBtn')?.addEventListener('click', () => window.electronAPI.openOutputDirectory());
 
     logsBtn.addEventListener('click', () => toggleLogs());
     closeLogsBtn.addEventListener('click', () => logsPanel.classList.remove('active'));
@@ -435,21 +438,32 @@ async function startRecording(sourceId, handle, hasVideo = false) {
         activeStreamCleanup = cleanup;
         globalStream = combinedStream;
 
-        // Setup Visualizer
+        // Setup Visualizer on System Audio Stream (ignoring mic for silence & visualizer analysis)
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
         }
 
         analyser = audioCtx.createAnalyser();
-        const source = audioCtx.createMediaStreamSource(combinedStream);
-        source.connect(analyser);
+        const systemAudioTracks = rawStream.getAudioTracks();
+        if (systemAudioTracks && systemAudioTracks.length > 0) {
+            const systemAudioStream = new MediaStream([systemAudioTracks[0]]);
+            const source = audioCtx.createMediaStreamSource(systemAudioStream);
+            source.connect(analyser);
+        } else {
+            const source = audioCtx.createMediaStreamSource(combinedStream);
+            source.connect(analyser);
+        }
         analyser.fftSize = 256;
         analyser.smoothingTimeConstant = 0.8;
         dataArray = new Uint8Array(analyser.frequencyBinCount);
 
         silenceCounter = 0;
         isAudioSilentWarningShown = false;
+        silenceStartTime = Date.now();
+        if (silenceCheckInterval) clearInterval(silenceCheckInterval);
+        silenceCheckInterval = setInterval(checkSilenceAndAutoStop, 250);
+
         drawVisualizer();
 
         let mimeType = 'audio/webm;codecs=opus';
@@ -551,6 +565,11 @@ function stopRecording(isManual = false) {
         
         recordVideoCheckbox.disabled = false;
         clearInterval(timerInterval);
+        if (silenceCheckInterval) {
+            clearInterval(silenceCheckInterval);
+            silenceCheckInterval = null;
+        }
+        silenceStartTime = null;
         
         const video = document.getElementById('screenshotVideo');
         if (video) {
@@ -574,6 +593,7 @@ function togglePause() {
         mediaRecorder.pause();
         isPaused = true;
         lastPauseStart = Date.now();
+        silenceStartTime = Date.now();
         statusDot.classList.remove('active');
         statusDot.classList.add('paused');
         statusLabel.textContent = "Gravação Pausada";
@@ -585,6 +605,7 @@ function togglePause() {
         mediaRecorder.resume();
         isPaused = false;
         totalPausedTime += (Date.now() - lastPauseStart);
+        silenceStartTime = Date.now();
         statusDot.classList.add('active');
         statusDot.classList.remove('paused');
         statusLabel.textContent = "Gravando Áudio...";
@@ -597,6 +618,41 @@ function togglePause() {
     }
 
     window.electronAPI.syncOverlay({ isPaused: isPaused });
+}
+
+function checkSilenceAndAutoStop() {
+    if (!isRecording || isPaused || !analyser || !dataArray) {
+        silenceStartTime = Date.now();
+        return;
+    }
+
+    analyser.getByteFrequencyData(dataArray);
+
+    let total = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+        total += dataArray[i];
+    }
+    const avg = total / dataArray.length;
+
+    if (avg > 1.5) {
+        silenceStartTime = Date.now();
+    } else {
+        const silenceLimitMinutes = config.autoStopSilenceMinutes !== undefined ? parseFloat(config.autoStopSilenceMinutes) : 1;
+        if (silenceLimitMinutes > 0 && silenceStartTime) {
+            const silentMs = Date.now() - silenceStartTime;
+            const limitMs = silenceLimitMinutes * 60 * 1000;
+            if (silentMs >= limitMs) {
+                console.log(`[Autostop] Gravação finalizada automaticamente após ${silenceLimitMinutes} min de silêncio no áudio da reunião.`);
+                
+                const n = new Notification("Meet Record", {
+                    body: `Gravação finalizada automaticamente (${silenceLimitMinutes} min sem som na reunião).`,
+                });
+                setTimeout(() => n.close(), 5000);
+
+                stopRecording(false);
+            }
+        }
+    }
 }
 
 function drawVisualizer() {

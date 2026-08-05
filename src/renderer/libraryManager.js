@@ -24,6 +24,11 @@ export async function renderLibraryUI({ onOpenRecording, onDeleteRecording, onOp
         updateTagFilterBar({ onOpenRecording, onDeleteRecording, onOpenTagEditor });
     }
 
+    const countBadge = document.getElementById('libraryCountBadge');
+    if (countBadge) {
+        countBadge.textContent = `${allVideos.length} ${allVideos.length === 1 ? 'gravação' : 'gravações'}`;
+    }
+
     if (allVideos.length === 0) {
         libraryContent.innerHTML = '<p style="text-align:center; opacity:0.5;">Nenhuma gravação encontrada.</p>';
         return;
@@ -104,12 +109,16 @@ export async function renderLibraryUI({ onOpenRecording, onDeleteRecording, onOp
                 </div>
                 <div class="lib-item-actions">
                      <button class="btn-small btn-tags" data-action="edit-tags" title="Editar Tags">🏷️</button>
+                     <button class="btn-small btn-folder-explorer" data-action="open-folder" title="Abrir pasta no Explorer">
+                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                     </button>
                      <button class="btn-small" data-action="open">${buttonText}</button>
                      <span class="badge badge-success">${badgeText}</span>
                 </div>
             `;
 
             item.querySelector('[data-action="open"]')?.addEventListener('click', () => onOpenRecording(rec.path));
+            item.querySelector('[data-action="open-folder"]')?.addEventListener('click', () => window.electronAPI.openFileLocation(rec.path));
             item.querySelector('[data-action="delete"]')?.addEventListener('click', () => onDeleteRecording(rec.path));
             item.querySelector('[data-action="edit-tags"]')?.addEventListener('click', () => onOpenTagEditor(rec.path, tags, isFav));
 

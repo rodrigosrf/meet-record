@@ -21,6 +21,7 @@ const store = new Store({
     defaults: {
         outputDirectory: '',
         autoRecord: true,
+        autoStopSilenceMinutes: 1,
         organizationConfig: {
             pathTemplate: '{year}-{month}-{day}',
             fileNamingTemplate: '{timestamp}_{title}',
@@ -340,6 +341,19 @@ ipcMain.handle('open-file', async (event, filePath) => {
         return { success: true };
     }
     return { success: false, error: 'Arquivo não encontrado.' };
+});
+
+ipcMain.handle('open-file-location', async (event, filePath) => {
+    if (filePath && fs.existsSync(filePath)) {
+        shell.showItemInFolder(filePath);
+        return { success: true };
+    }
+    const outputDir = store.get('outputDirectory');
+    if (outputDir && fs.existsSync(outputDir)) {
+        shell.openPath(outputDir);
+        return { success: true };
+    }
+    return { success: false, error: 'Arquivo ou pasta não encontrado.' };
 });
 
 // Overlay IPC Bridge

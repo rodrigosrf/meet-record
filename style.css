@@ -810,16 +810,100 @@ footer {
 }
 
 .library-header {
-    padding: 2rem;
+    padding: 1.5rem 2rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-bottom: 1px solid var(--glass-border);
 }
 
+.library-header-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
 .library-header h2 {
     font-size: 1.25rem;
     font-weight: 700;
+    margin: 0;
+}
+
+.library-header-badge {
+    font-size: 0.725rem;
+    font-weight: 600;
+    color: var(--accent-color);
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    padding: 3px 10px;
+    border-radius: 20px;
+}
+
+.library-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.btn-explorer-header {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(99, 102, 241, 0.12));
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    color: var(--text-primary);
+    font-size: 0.825rem;
+    font-weight: 600;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+}
+
+.btn-explorer-header svg {
+    color: var(--accent-color);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), color 0.3s ease;
+}
+
+.btn-explorer-header:hover {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(99, 102, 241, 0.25));
+    border-color: var(--accent-color);
+    color: #ffffff;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(56, 189, 248, 0.3);
+}
+
+.btn-explorer-header:hover svg {
+    transform: scale(1.15) translateY(-1px);
+    color: #ffffff;
+}
+
+.btn-explorer-header:active {
+    transform: translateY(0) scale(0.97);
+    box-shadow: 0 2px 10px rgba(56, 189, 248, 0.2);
+}
+
+.btn-folder-explorer {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+    border: 1px solid var(--glass-border);
+    padding: 6px 10px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.25s ease;
+}
+
+.btn-folder-explorer:hover {
+    background: rgba(56, 189, 248, 0.15);
+    color: var(--accent-color);
+    border-color: rgba(56, 189, 248, 0.4);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(56, 189, 248, 0.15);
 }
 
 .library-content {

@@ -55,6 +55,16 @@ async function init() {
         currentPathDisplay.textContent = "Não selecionado";
     }
 
+    const autoStopSilenceInput = document.getElementById('autoStopSilenceInput');
+    if (autoStopSilenceInput) {
+        autoStopSilenceInput.value = config.autoStopSilenceMinutes !== undefined ? config.autoStopSilenceMinutes : 1;
+        autoStopSilenceInput.addEventListener('change', async () => {
+            const val = parseFloat(autoStopSilenceInput.value);
+            const minutes = isNaN(val) || val < 0 ? 0 : val;
+            await window.electronAPI.updateConfig({ autoStopSilenceMinutes: minutes });
+        });
+    }
+
     // General Listeners
     if (changePathBtn) {
         changePathBtn.addEventListener('click', async () => {

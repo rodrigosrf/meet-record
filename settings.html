@@ -44,6 +44,17 @@
                         <p class="help-text">Diretório onde as gravações e prints serão salvos.</p>
                     </div>
                 </div>
+
+                <div class="setting-group">
+                    <h3>⏱️ Inatividade na Reunião</h3>
+                    <div class="setting-item">
+                        <label class="setting-label">Finalizar gravação por inatividade de voz (minutos)</label>
+                        <div class="path-input-group">
+                            <input type="number" id="autoStopSilenceInput" class="form-input" value="1" min="0" max="60" step="0.5">
+                        </div>
+                        <p class="help-text">Analisa o som transmitido pelos outros participantes da reunião. Se ficar sem áudio pelo tempo configurado, a gravação será finalizada automaticamente. Defina 0 para desabilitar. (Padrão: 1 minuto)</p>
+                    </div>
+                </div>
             </div>
 
             <!-- Organization Tab -->
