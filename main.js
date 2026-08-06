@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, shell, Tray, Menu, nativeImage, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, desktopCapturer, dialog, shell, screen } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { exec, spawn } from 'child_process';
@@ -72,7 +72,7 @@ let detectionInterval;
 const activeProcesses = new Map();
 const transcriptionQueue = [];
 let isProcessingQueue = false;
-let tray = null;
+
 let isQuitting = false;
 
 let psDaemonProcess = null;
@@ -118,67 +118,6 @@ function createWindow() {
 
     mainWindow.loadFile('index.html');
 
-    mainWindow.on('close', (event) => {
-        if (!isQuitting) {
-            event.preventDefault();
-            mainWindow.hide();
-        }
-        return false;
-    });
-}
-
-function createTray() {
-    const iconPath = path.join(__dirname, 'assets', 'icon.png');
-    const icon = nativeImage.createFromPath(iconPath);
-    
-    tray = new Tray(icon.resize({ width: 16, height: 16 }));
-    
-    const contextMenu = Menu.buildFromTemplate([
-        { 
-            label: 'Abrir Meet Record', 
-            click: () => {
-                mainWindow.show();
-            } 
-        },
-        { type: 'separator' },
-        {
-            label: 'Iniciar Gravação Manual',
-            click: () => {
-                mainWindow.webContents.send('start-manual-recording');
-            }
-        },
-        {
-            label: 'Finalizar Gravação',
-            click: () => {
-                mainWindow.webContents.send('stop-recording');
-            }
-        },
-        {
-            label: 'Tirar Print Manual',
-            click: () => {
-                mainWindow.webContents.send('trigger-manual-screenshot');
-            }
-        },
-        { type: 'separator' },
-        { 
-            label: 'Sair', 
-            click: () => {
-                isQuitting = true;
-                app.quit();
-            } 
-        }
-    ]);
-
-    tray.setToolTip('Meet Record');
-    tray.setContextMenu(contextMenu);
-
-    tray.on('click', () => {
-        if (mainWindow.isVisible()) {
-            mainWindow.hide();
-        } else {
-            mainWindow.show();
-        }
-    });
 }
 
 function createSettingsWindow() {
@@ -254,7 +193,6 @@ function createOverlayWindow() {
 
 app.whenReady().then(() => {
     createWindow();
-    createTray();
     startDetectionLoop();
     migrateImagesDirectoryAsync(store.get('outputDirectory'));
     cleanupOldImages();
@@ -421,6 +359,8 @@ ipcMain.handle('save-file', async (event, { buffer, fileName, metadata, hasVideo
 
     const orgConfig = store.get('organizationConfig');
     const pathTemplate = orgConfig?.pathTemplate || '{year}-{month}-{day}';
+    const fileNamingTemplate = orgConfig?.fileNamingTemplate || '{timestamp}_{title}';
+
     const resolvedDir = resolveTemplate(pathTemplate, metadata);
     const targetDir = path.join(outputDir, resolvedDir);
     
@@ -428,10 +368,13 @@ ipcMain.handle('save-file', async (event, { buffer, fileName, metadata, hasVideo
         fs.mkdirSync(targetDir, { recursive: true });
     }
 
-    const tempWebmPath = path.join(targetDir, `temp_${Date.now()}.webm`);
-    const finalMp3Name = fileName.replace('.webm', '.mp3');
+    const resolvedBaseName = resolveTemplate(fileNamingTemplate, metadata || {});
+    const webmFileName = fileName || `${resolvedBaseName}.webm`;
+    const finalMp3Name = webmFileName.replace(/\.webm$/i, '.mp3');
     const finalMp3Path = path.join(targetDir, finalMp3Name);
-    const finalWebmPath = path.join(targetDir, fileName);
+    const finalWebmPath = path.join(targetDir, webmFileName);
+
+    const tempWebmPath = path.join(targetDir, `temp_${Date.now()}.webm`);
 
     try {
         fs.writeFileSync(tempWebmPath, Buffer.from(buffer));

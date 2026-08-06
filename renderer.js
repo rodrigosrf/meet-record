@@ -733,17 +733,7 @@ function resetVisualizer() {
 async function saveRecording() {
     const blob = new Blob(recordedChunks, { type: 'audio/webm' });
     const buffer = new Uint8Array(await blob.arrayBuffer());
-    
-    let fileName = "";
     const now = new Date();
-    const timestamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
-    const safeTitle = currentMeetingName.replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, '_');
-    
-    if (isManualRecording) {
-        fileName = `${timestamp}_grav_manual.webm`;
-    } else {
-        fileName = `${timestamp}_${safeTitle}.webm`;
-    }
 
     const duration = Date.now() - startTime;
     if (duration < 60000) {
@@ -771,7 +761,7 @@ async function saveRecording() {
         folderName: currentMeetingFolder
     };
     
-    const result = await window.electronAPI.saveFile({ buffer, fileName, metadata, hasVideo: isRecordingVideo });
+    const result = await window.electronAPI.saveFile({ buffer, metadata, hasVideo: isRecordingVideo });
     
     if (result.success) {
         statusLabel.textContent = "Aguardando Reunião...";
@@ -831,7 +821,8 @@ async function captureScreenshot() {
             const buffer = new Uint8Array(await blob.arrayBuffer());
             const now = new Date();
             const timestamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}`;
-            const prefix = currentMeetingFolder || `${timestamp}_grav_manual`;
+            const safeTitle = (currentMeetingName || 'Gravação Manual').replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, '_');
+            const prefix = currentMeetingFolder || `${timestamp}_${safeTitle}`;
             const fileName = `${prefix}_manual_screenshot_${timestamp}.jpg`;
             
             await window.electronAPI.saveScreenshot({ 
