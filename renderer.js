@@ -2,6 +2,7 @@ import { getAudioInputDevices, createMixedAudioStream } from './src/renderer/aud
 import { openAudioRecording, stopPlaybackAudio } from './src/renderer/audioPlayer.js';
 import { initLibraryManager, renderLibraryUI } from './src/renderer/libraryManager.js';
 import { openTagEditorModal } from './src/renderer/tagEditor.js';
+import { AudioVisualizer } from './src/renderer/audioVisualizer.js';
 
 const statusDot = document.getElementById('statusDot');
 const statusLabel = document.getElementById('statusLabel');
@@ -35,11 +36,12 @@ const titleInput = document.getElementById('titleInput');
 const editTitleBtn = document.getElementById('editTitleBtn');
 const audioDeviceSelect = document.getElementById('audioDeviceSelect');
 
-// Audio Context for Visualizer
+// Audio Context & Visualizer Engine
 let audioCtx;
 let analyser;
 let dataArray;
 let animationId;
+let visualizerEngine;
 let silenceCounter = 0;
 let isAudioSilentWarningShown = false;
 let silenceStartTime = null;
@@ -82,6 +84,29 @@ async function init() {
 
     // Populate Audio Hardware Devices
     await loadAudioDevices();
+
+    // Setup Visualizer Engine & UI Mode Selectors
+    visualizerEngine = new AudioVisualizer('visualizerCanvas', 'mainVisualizer');
+
+    // Configurar botões de alternância de modos visuais
+    const modeSelector = document.getElementById('vizModeSelector');
+    if (modeSelector) {
+        const modeButtons = modeSelector.querySelectorAll('.viz-mode-btn');
+        const currentMode = visualizerEngine.getMode();
+        modeButtons.forEach(btn => {
+            if (btn.dataset.mode === currentMode) btn.classList.add('active');
+            else btn.classList.remove('active');
+
+            btn.addEventListener('click', () => {
+                modeButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                if (visualizerEngine) visualizerEngine.setMode(btn.dataset.mode);
+            });
+        });
+    }
+
+    // Iniciar loop contínuo do visualizer (suporta repouso/standby e gravação)
+    drawVisualizer();
 
     // Init Modules
     await initLibraryManager({
@@ -656,77 +681,51 @@ function checkSilenceAndAutoStop() {
 }
 
 function drawVisualizer() {
+    if (animationId) {
+        cancelAnimationFrame(animationId);
+    }
     animationId = requestAnimationFrame(drawVisualizer);
-    const canvas = document.getElementById('visualizerCanvas');
-    if (!canvas || !analyser) return;
     
-    const ctx = canvas.getContext('2d');
-    const width = canvas.width = canvas.offsetWidth;
-    const height = canvas.height = canvas.offsetHeight;
-    
-    analyser.getByteFrequencyData(dataArray);
+    if (analyser && dataArray) {
+        analyser.getByteFrequencyData(dataArray);
 
-    if (isRecording && !isPaused) {
-        let total = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-            total += dataArray[i];
-        }
-        if (total === 0) {
-            silenceCounter++;
-            if (silenceCounter > 600 && !isAudioSilentWarningShown) {
-                isAudioSilentWarningShown = true;
-                if (statusLabel) {
-                    statusLabel.textContent = isRecordingVideo 
-                        ? "Gravando Vídeo + Áudio... (⚠️ Sem som no sistema)" 
-                        : "Gravando Áudio... (⚠️ Sem som no sistema)";
-                }
+        if (isRecording && !isPaused) {
+            let total = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                total += dataArray[i];
             }
-        } else {
-            silenceCounter = 0;
-            if (isAudioSilentWarningShown) {
-                isAudioSilentWarningShown = false;
-                if (statusLabel) {
-                    statusLabel.textContent = isRecordingVideo 
-                        ? "Gravando Vídeo + Áudio..." 
-                        : "Gravando Áudio...";
+            if (total === 0) {
+                silenceCounter++;
+                if (silenceCounter > 600 && !isAudioSilentWarningShown) {
+                    isAudioSilentWarningShown = true;
+                    if (statusLabel) {
+                        statusLabel.textContent = isRecordingVideo 
+                            ? "Gravando Vídeo + Áudio... (⚠️ Sem som no sistema)" 
+                            : "Gravando Áudio... (⚠️ Sem som no sistema)";
+                    }
+                }
+            } else {
+                silenceCounter = 0;
+                if (isAudioSilentWarningShown) {
+                    isAudioSilentWarningShown = false;
+                    if (statusLabel) {
+                        statusLabel.textContent = isRecordingVideo 
+                            ? "Gravando Vídeo + Áudio..." 
+                            : "Gravando Áudio...";
+                    }
                 }
             }
         }
     }
 
-    ctx.clearRect(0, 0, width, height);
-    
-    const barWidth = (width / dataArray.length) * 2.5;
-    let barHeight;
-    let x = 0;
-
-    const gradient = ctx.createLinearGradient(0, height, 0, 0);
-    gradient.addColorStop(0, '#38bdf8');
-    gradient.addColorStop(1, '#818cf8');
-
-    for(let i = 0; i < dataArray.length; i++) {
-        barHeight = (dataArray[i] / 255) * height;
-        ctx.fillStyle = gradient;
-        
-        const radius = barWidth / 2;
-        const barX = x;
-        const barY = height - barHeight;
-        
-        if (barHeight > 1) {
-            ctx.beginPath();
-            ctx.roundRect(barX, barY, barWidth - 2, barHeight, [radius, radius, 0, 0]);
-            ctx.fill();
-        }
-
-        x += barWidth + 1;
+    if (visualizerEngine) {
+        visualizerEngine.draw(dataArray, isRecording, isPaused);
     }
 }
 
 function resetVisualizer() {
-    const canvas = document.getElementById('visualizerCanvas');
-    if (canvas) {
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (visualizerEngine) {
+        visualizerEngine.reset();
     }
 }
 

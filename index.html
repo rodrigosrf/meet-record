@@ -86,8 +86,32 @@
                     <p id="meetingTime">00:00:00</p>
                 </div>
                 
-                <div class="visualizer" id="mainVisualizer">
-                    <canvas id="visualizerCanvas"></canvas>
+                <!-- Audio Equalizer & Visualizer Section -->
+                <div class="visualizer-wrapper">
+                    <div class="visualizer-header">
+                        <div class="visualizer-mode-selector" id="vizModeSelector">
+                            <button class="viz-mode-btn active" data-mode="spectrum" title="Espectro Neon com Picos">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                                <span>Espectro</span>
+                            </button>
+                            <button class="viz-mode-btn" data-mode="wave" title="Ondas Fluídas Osciloscópio">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h2c2 0 3-7 5-7s3 14 5 14 3-7 5-7h3"></path></svg>
+                                <span>Ondas</span>
+                            </button>
+                            <button class="viz-mode-btn" data-mode="led" title="Equalizador LED Matrix">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                                <span>LED</span>
+                            </button>
+                            <button class="viz-mode-btn" data-mode="radial" title="Pulso Radial Frequency Core">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="4"></circle></svg>
+                                <span>Radial</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="visualizer" id="mainVisualizer">
+                        <canvas id="visualizerCanvas"></canvas>
+                    </div>
                 </div>
 
                 <!-- Notes Section -->

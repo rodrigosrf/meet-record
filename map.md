@@ -39,6 +39,7 @@ meet-record/
 │   └── 📂 renderer/
 │       ├── 📄 audioDeviceManager.js # Enumeração e gerenciamento de dispositivos de entrada/saída de áudio
 │       ├── 📄 audioPlayer.js        # Controller de reprodução de gravações na interface
+│       ├── 📄 audioVisualizer.js    # Engine de equalizador de áudio High-DPI (Espectro Neon, Ondas, LED, Radial, VU Meter)
 │       ├── 📄 libraryManager.js     # Renderização, filtragem e ordenação da biblioteca de reuniões
 │       └── 📄 tagEditor.js          # Modal e editor de tags/categorias para reuniões salvas
 ```
