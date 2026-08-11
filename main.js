@@ -118,6 +118,25 @@ function createWindow() {
 
     mainWindow.loadFile('index.html');
 
+    mainWindow.on('closed', () => {
+        mainWindow = null;
+        isQuitting = true;
+        stopDetectionLoop();
+        stopPowerShellDaemon();
+
+        if (overlayWindow && !overlayWindow.isDestroyed()) {
+            overlayWindow.destroy();
+            overlayWindow = null;
+        }
+        if (settingsWindow && !settingsWindow.isDestroyed()) {
+            settingsWindow.destroy();
+            settingsWindow = null;
+        }
+
+        if (process.platform !== 'darwin') {
+            app.quit();
+        }
+    });
 }
 
 function createSettingsWindow() {
@@ -208,10 +227,20 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
     isQuitting = true;
+    stopDetectionLoop();
+    stopPowerShellDaemon();
+});
+
+app.on('will-quit', () => {
+    isQuitting = true;
+    stopDetectionLoop();
     stopPowerShellDaemon();
 });
 
 app.on('window-all-closed', function () {
+    isQuitting = true;
+    stopDetectionLoop();
+    stopPowerShellDaemon();
     if (process.platform !== 'darwin') app.quit();
 });
 
@@ -599,10 +628,12 @@ function startPowerShellDaemon() {
             psDaemonProcess = null;
             isScanningPending = false;
             
-            if (!isQuitting) {
+            if (!isQuitting && mainWindow && !mainWindow.isDestroyed()) {
                 setTimeout(() => {
-                    log('Reiniciando daemon do PowerShell...', 'info');
-                    startPowerShellDaemon();
+                    if (!isQuitting && mainWindow && !mainWindow.isDestroyed()) {
+                        log('Reiniciando daemon do PowerShell...', 'info');
+                        startPowerShellDaemon();
+                    }
                 }, 3000);
             }
         });
@@ -671,13 +702,29 @@ function handleDaemonScanResult(stdout) {
 
 function stopPowerShellDaemon() {
     if (psDaemonProcess) {
-        try {
-            if (psDaemonProcess.stdin.writable) {
-                psDaemonProcess.stdin.write('EXIT\n');
-            }
-            psDaemonProcess.kill();
-        } catch (e) { /* ignore */ }
+        const proc = psDaemonProcess;
         psDaemonProcess = null;
+        try {
+            if (proc.stdin && proc.stdin.writable) {
+                proc.stdin.write('EXIT\n');
+                proc.stdin.end();
+            }
+        } catch (e) { /* ignore */ }
+
+        try {
+            if (process.platform === 'win32' && proc.pid) {
+                exec(`taskkill /F /T /PID ${proc.pid}`, () => {});
+            } else {
+                proc.kill('SIGKILL');
+            }
+        } catch (e) { /* ignore */ }
+    }
+}
+
+function stopDetectionLoop() {
+    if (detectionInterval) {
+        clearInterval(detectionInterval);
+        detectionInterval = null;
     }
 }
 
@@ -685,7 +732,14 @@ function startDetectionLoop() {
     log('Iniciando loop de detecção automática com daemon', 'debug');
     startPowerShellDaemon();
 
+    if (detectionInterval) clearInterval(detectionInterval);
+
     detectionInterval = setInterval(async () => {
+        if (isQuitting || !mainWindow || mainWindow.isDestroyed()) {
+            stopDetectionLoop();
+            return;
+        }
+
         try {
             const sources = await desktopCapturer.getSources({ 
                 types: ['window'],
@@ -712,7 +766,7 @@ function startDetectionLoop() {
 
             log(`Janelas potenciais encontradas: ${potentialMeetingWindows.length}`, 'debug');
 
-            if (!psDaemonProcess) {
+            if (!psDaemonProcess && !isQuitting) {
                 startPowerShellDaemon();
             }
 
