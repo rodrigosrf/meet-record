@@ -28,10 +28,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sendOverlayAction: (action) => ipcRenderer.send('overlay-action', action),
     syncOverlay: (data) => ipcRenderer.send('sync-overlay', data),
     
-    // Logs
-    getLogs: () => ipcRenderer.invoke('get-logs'),
-    onNewLog: (callback) => ipcRenderer.on('new-log', (event, log) => callback(log)),
-    
     showOverlay: () => ipcRenderer.send('show-overlay'),
     hideOverlay: () => ipcRenderer.send('hide-overlay'),
     onTogglePause: (callback) => ipcRenderer.on('toggle-pause', () => callback()),

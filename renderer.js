@@ -27,14 +27,14 @@ const openFolderBtn = document.getElementById('openFolderBtn');
 const notesContainer = document.getElementById('notesContainer');
 const meetingNotes = document.getElementById('meetingNotes');
 const recordVideoCheckbox = document.getElementById('recordVideoCheckbox');
-const logsBtn = document.getElementById('logsBtn');
-const logsPanel = document.getElementById('logsPanel');
-const closeLogsBtn = document.getElementById('closeLogsBtn');
-const logsContent = document.getElementById('logsContent');
 const autoRecordCheckbox = document.getElementById('autoRecordCheckbox');
 const titleInput = document.getElementById('titleInput');
 const editTitleBtn = document.getElementById('editTitleBtn');
 const audioDeviceSelect = document.getElementById('audioDeviceSelect');
+
+// Cover Screenshot State
+let hasAutoCoverBeenTaken = false;
+let isCurrentMeetingFocused = false;
 
 // Audio Context & Visualizer Engine
 let audioCtx;
@@ -132,13 +132,20 @@ async function init() {
     openFolderBtn.addEventListener('click', () => window.electronAPI.openOutputDirectory());
     document.getElementById('openLibraryFolderBtn')?.addEventListener('click', () => window.electronAPI.openOutputDirectory());
 
-    logsBtn.addEventListener('click', () => toggleLogs());
-    closeLogsBtn.addEventListener('click', () => logsPanel.classList.remove('active'));
-
     window.electronAPI.onMeetingDetected(async (meetings) => {
         const now = Date.now();
         lastDetectedMeetings = meetings;
         
+        const activeMeetingObj = meetings.find(m => m.handle === currentMeetingHandle) || meetings[0];
+        isCurrentMeetingFocused = activeMeetingObj ? !!activeMeetingObj.isFocused : false;
+
+        if (isRecording && !hasAutoCoverBeenTaken && isCurrentMeetingFocused) {
+            const elapsed = (Date.now() - startTime) - totalPausedTime;
+            if (elapsed >= 60000) {
+                captureCoverScreenshot();
+            }
+        }
+
         for (const m of meetings) {
             if (manuallyStoppedMeetings.has(m.handle)) {
                 manuallyStoppedMeetings.set(m.handle, now);
@@ -224,10 +231,6 @@ async function init() {
 
     window.electronAPI.onTogglePause(() => togglePause());
 
-    window.electronAPI.onNewLog((log) => addLogToUI(log));
-    const initialLogs = await window.electronAPI.getLogs();
-    initialLogs.forEach(log => addLogToUI(log, false));
-
     meetingTitle.addEventListener('click', enterEditMode);
     editTitleBtn.addEventListener('click', enterEditMode);
     
@@ -258,8 +261,8 @@ function updateAutoRecordModeUI(isAuto) {
         offLabel?.classList.remove('active');
         onLabel?.classList.add('active');
     } else {
-        offLabel?.classList.add('active');
-        onLabel?.classList.remove('active');
+        offLabel?.classList.remove('active');
+        onLabel?.classList.add('active');
     }
 }
 
@@ -288,7 +291,6 @@ function exitEditMode(save) {
 }
 
 async function toggleLibrary() {
-    logsPanel.classList.remove('active');
     libraryPanel.classList.toggle('active');
     if (libraryPanel.classList.contains('active')) {
         renderLibraryUI({
@@ -296,29 +298,6 @@ async function toggleLibrary() {
             onDeleteRecording: deleteRecording,
             onOpenTagEditor: openTagEditorModal
         });
-    }
-}
-
-async function toggleLogs() {
-    libraryPanel.classList.remove('active');
-    logsPanel.classList.toggle('active');
-}
-
-function addLogToUI(log, scroll = true) {
-    const logsContent = document.getElementById('logsContent');
-    if (!logsContent) return;
-    const entry = document.createElement('div');
-    entry.className = `log-entry ${log.type}`;
-    entry.innerHTML = `
-        <div class="log-header">
-            <span class="log-time">${log.timestamp}</span>
-            <span class="log-type-tag">${log.type}</span>
-        </div>
-        <div class="log-msg">${log.message}</div>
-    `;
-    logsContent.appendChild(entry);
-    if (logsContent.children.length > 100) {
-        logsContent.removeChild(logsContent.firstChild);
     }
 }
 
@@ -511,6 +490,7 @@ async function startRecording(sourceId, handle, hasVideo = false) {
 
         isRecording = true;
         isStarting = false;
+        hasAutoCoverBeenTaken = false;
         recordVideoCheckbox.disabled = true;
         
         mainCard.classList.add('recording');
@@ -560,6 +540,10 @@ async function startRecording(sourceId, handle, hasVideo = false) {
 
 function stopRecording(isManual = false) {
     if (mediaRecorder && isRecording) {
+        if (!hasAutoCoverBeenTaken) {
+            captureCoverScreenshot();
+        }
+
         if (isManual) {
             lastDetectedMeetings.forEach(m => manuallyStoppedMeetings.set(m.handle, Date.now()));
             if (currentMeetingHandle) manuallyStoppedMeetings.set(currentMeetingHandle, Date.now());
@@ -604,7 +588,6 @@ function stopRecording(isManual = false) {
         globalStream = null;
         
         notesContainer.classList.add('hidden');
-        cancelAnimationFrame(animationId);
         resetVisualizer();
 
         window.electronAPI.hideOverlay();
@@ -797,6 +780,49 @@ function updateTimer() {
         `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
     window.electronAPI.syncOverlay({ timer: meetingTime.textContent });
+
+    // Check for auto cover screenshot after 1 minute when Teams is in focus
+    if (!hasAutoCoverBeenTaken && elapsed >= 60000 && isCurrentMeetingFocused) {
+        captureCoverScreenshot();
+    }
+}
+
+async function captureCoverScreenshot() {
+    if (hasAutoCoverBeenTaken || !isRecording || !globalStream) return;
+    hasAutoCoverBeenTaken = true;
+
+    try {
+        const video = document.getElementById('screenshotVideo');
+        if (!video) return;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        if (canvas.width === 0 || canvas.height === 0) return;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        canvas.toBlob(async (blob) => {
+            if (!blob) return;
+            const buffer = new Uint8Array(await blob.arrayBuffer());
+            const now = new Date();
+            const timestamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
+            const prefix = currentMeetingFolder || `${timestamp}_meeting`;
+            const fileName = `${prefix}_cover.jpg`;
+            
+            await window.electronAPI.saveScreenshot({ 
+                buffer, 
+                fileName, 
+                folderName: prefix,
+                metadata: { title: currentMeetingName || 'Sem_Titulo' }
+            });
+            console.log("Capa da gravação gerada automaticamente:", fileName);
+        }, 'image/jpeg', 0.85);
+    } catch (err) {
+        console.error("Erro ao capturar capa da gravação:", err);
+    }
 }
 
 async function captureScreenshot() {

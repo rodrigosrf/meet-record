@@ -79,25 +79,15 @@ let psDaemonProcess = null;
 let psDaemonBuffer = '';
 let isScanningPending = false;
 
-// Logging System
-const logs = [];
-const MAX_LOGS = 100;
-
+// Logging System (Console Debug Only)
 function log(message, type = 'info') {
-    const now = new Date();
-    const entry = {
-        timestamp: now.toLocaleTimeString('pt-BR'),
-        fullTimestamp: now.toISOString(),
-        message,
-        type
-    };
-    logs.push(entry);
-    if (logs.length > MAX_LOGS) logs.shift();
-    
-    // File saving removed per user request
-    
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('new-log', entry);
+    const timestamp = new Date().toLocaleTimeString('pt-BR');
+    if (type === 'error') {
+        console.error(`[${timestamp}] [ERROR] ${message}`);
+    } else if (type === 'warn') {
+        console.warn(`[${timestamp}] [WARN] ${message}`);
+    } else {
+        console.log(`[${timestamp}] [${type.toUpperCase()}] ${message}`);
     }
 }
 
@@ -266,10 +256,6 @@ ipcMain.handle('get-config', () => {
         outputDirectory: store.get('outputDirectory'),
         autoRecord: store.get('autoRecord')
     };
-});
-
-ipcMain.handle('get-logs', () => {
-    return logs;
 });
 
 ipcMain.handle('update-config', (event, newConfig) => {

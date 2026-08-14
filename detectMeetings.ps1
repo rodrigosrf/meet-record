@@ -5,9 +5,19 @@
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
+Add-Type @"
+  using System;
+  using System.Runtime.InteropServices;
+  public class User32FocusHelper {
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+  }
+"@
+
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 function Perform-MeetingScan {
+    $fgHandle = [User32FocusHelper]::GetForegroundWindow()
     $root = [Windows.Automation.AutomationElement]::RootElement
     $winCondition = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Window)
     $windows = $root.FindAll([Windows.Automation.TreeScope]::Children, $winCondition)
@@ -67,7 +77,9 @@ function Perform-MeetingScan {
                 }
                 
                 if ($isMeeting) {
-                    $results += @{ title = $name; handle = $win.Current.NativeWindowHandle.ToString() }
+                    $winHandle = $win.Current.NativeWindowHandle.ToString()
+                    $isFocused = ($winHandle -eq $fgHandle.ToString())
+                    $results += @{ title = $name; handle = $winHandle; isFocused = $isFocused }
                 }
             }
         } catch {

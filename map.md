@@ -112,12 +112,12 @@ Ao modificar uma funcionalidade específica, consulte este guia antes de ler os 
 
 *   **Alterar detecção de reuniões (novos apps ou navegadores)**:
     👉 Editar [detectMeetings.ps1](file:///d:/Dev/meet-record/detectMeetings.ps1) (função `Get-ActiveMeetings`) e parsing em [main.js](file:///d:/Dev/meet-record/main.js).
-*   **Ajustar conversão de áudio ou execução do FFmpeg**:
-    👉 Editar [src/main/ffmpegService.js](file:///d:/Dev/meet-record/src/main/ffmpegService.js).
-*   **Modificar a lista de gravações, biblioteca ou thumbnails**:
-    👉 Editar [src/main/libraryService.js](file:///d:/Dev/meet-record/src/main/libraryService.js) e [src/renderer/libraryManager.js](file:///d:/Dev/meet-record/src/renderer/libraryManager.js).
-*   **Ajustar a captura de áudio/vídeo WebRTC ou detecção de silêncio**:
-    👉 Editar [renderer.js](file:///d:/Dev/meet-record/renderer.js) e [src/renderer/audioDeviceManager.js](file:///d:/Dev/meet-record/src/renderer/audioDeviceManager.js).
+*   **Ajustar conversão de áudio, geração de .md ou execução do FFmpeg**:
+    👉 Editar [src/main/ffmpegService.js](file:///d:/Dev/meet-record/src/main/ffmpegService.js) (Nota: arquivos `.md` sidecar só são gerados se houver comentários registrados).
+*   **Modificar a lista de gravações, biblioteca, capas/thumbnails**:
+    👉 Editar [src/main/libraryService.js](file:///d:/Dev/meet-record/src/main/libraryService.js) e [src/renderer/libraryManager.js](file:///d:/Dev/meet-record/src/renderer/libraryManager.js) (capas automáticas são capturadas após 1 min com foco na janela do Teams).
+*   **Ajustar a captura de áudio/vídeo WebRTC, visualizador contínuo ou detecção de silêncio**:
+    👉 Editar [renderer.js](file:///d:/Dev/meet-record/renderer.js), [src/renderer/audioVisualizer.js](file:///d:/Dev/meet-record/src/renderer/audioVisualizer.js) e [src/renderer/audioDeviceManager.js](file:///d:/Dev/meet-record/src/renderer/audioDeviceManager.js).
 *   **Modificar o Overlay flutuante**:
     👉 Editar [overlay.js](file:///d:/Dev/meet-record/overlay.js), [overlay.html](file:///d:/Dev/meet-record/overlay.html) e tratadores de eventos de overlay em [main.js](file:///d:/Dev/meet-record/main.js).
 

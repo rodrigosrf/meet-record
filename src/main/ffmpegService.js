@@ -62,22 +62,23 @@ export async function convertToMp3AndSave({ tempWebmPath, finalMp3Path, finalWeb
                     const metadataPath = finalMp3Path.replace(/\.mp3$/, '.json');
                     await fs.promises.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
 
-                    // Generate Markdown Sidecar for NotebookLM
-                    try {
-                        const mdPath = finalMp3Path.replace(/\.mp3$/, '.md');
-                        const date = new Date(metadata.date);
-                        const formattedDate = date.toLocaleString('pt-BR', { 
-                            day: '2-digit', month: '2-digit', year: 'numeric',
-                            hour: '2-digit', minute: '2-digit'
-                        });
-                        
-                        const durationSeconds = Math.floor((metadata.duration || 0) / 1000);
-                        const h = Math.floor(durationSeconds / 3600);
-                        const m = Math.floor((durationSeconds % 3600) / 60);
-                        const s = durationSeconds % 60;
-                        const formattedDuration = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                    // Generate Markdown Sidecar for NotebookLM (Only if note/comment exists)
+                    if (metadata.note && metadata.note.trim()) {
+                        try {
+                            const mdPath = finalMp3Path.replace(/\.mp3$/, '.md');
+                            const date = new Date(metadata.date);
+                            const formattedDate = date.toLocaleString('pt-BR', { 
+                                day: '2-digit', month: '2-digit', year: 'numeric',
+                                hour: '2-digit', minute: '2-digit'
+                            });
+                            
+                            const durationSeconds = Math.floor((metadata.duration || 0) / 1000);
+                            const h = Math.floor(durationSeconds / 3600);
+                            const m = Math.floor((durationSeconds % 3600) / 60);
+                            const s = durationSeconds % 60;
+                            const formattedDuration = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 
-                        const mdContent = `# ${metadata.title || 'Sem Título'}
+                            const mdContent = `# ${metadata.title || 'Sem Título'}
 
 **Data:** ${formattedDate}
 **Duração:** ${formattedDuration}
@@ -85,11 +86,12 @@ export async function convertToMp3AndSave({ tempWebmPath, finalMp3Path, finalWeb
 ---
 
 ## Notas da Reunião
-${metadata.note || '_Nenhuma nota registrada._'}
+${metadata.note.trim()}
 `;
-                        await fs.promises.writeFile(mdPath, mdContent, 'utf8');
-                    } catch (mdError) {
-                        console.error('Error generating Markdown sidecar:', mdError);
+                            await fs.promises.writeFile(mdPath, mdContent, 'utf8');
+                        } catch (mdError) {
+                            console.error('Error generating Markdown sidecar:', mdError);
+                        }
                     }
                 }
 
