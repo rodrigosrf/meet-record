@@ -34,12 +34,13 @@ meet-record/
 ├── 📄 package.json              # Configurações do projeto, scripts e electron-builder
 ├── 📂 src/
 │   ├── 📂 main/
-│   │   ├── 📄 ffmpegService.js  # Conversão de áudio para MP3, extração e junção via FFmpeg
+│   │   ├── 📄 ffmpegService.js  # Conversão de áudio para MP3, extração, geração de waveform banner via FFmpeg
 │   │   └── 📄 libraryService.js # Gestão de arquivos de gravação no disco, thumbs, exclusão e arquivamento
 │   └── 📂 renderer/
 │       ├── 📄 audioDeviceManager.js # Enumeração e gerenciamento de dispositivos de entrada/saída de áudio
 │       ├── 📄 audioPlayer.js        # Controller de reprodução de gravações na interface
-│       ├── 📄 audioVisualizer.js    # Engine de equalizador de áudio High-DPI (Espectro Neon, Ondas, LED, Radial, VU Meter)
+│       ├── 📄 audioVisualizer.js    # Engine de equalizador High-DPI (Espectro, Ondas, LED, Hélice, Líquido, Aurora, Plasma, Prisma)
+│       ├── 📄 videoCompositor.js    # Engine de efeitos em tempo real (Spotlight Halo, Click Ripples, Privacy Shield)
 │       ├── 📄 libraryManager.js     # Renderização, filtragem e ordenação da biblioteca de reuniões
 │       └── 📄 tagEditor.js          # Modal e editor de tags/categorias para reuniões salvas
 ```
@@ -54,12 +55,13 @@ meet-record/
 3. `detectMeetings.ps1` emite JSON estruturado via `stdout`.
 4. `main.js` consome o buffer e dispara eventos `meeting-detected` ou `no-meeting-detected` para o Renderer via `webContents.send`.
 
-### B. Ciclo de Gravação de Áudio/Vídeo
+### B. Ciclo de Gravação de Áudio/Vídeo com Efeitos
 1. **Início**: Acionado automaticamente pela detecção ou manualmente via UI/Overlay (`start-manual-recording`).
-2. **Captura**: O Renderer (`renderer.js`) utiliza `navigator.mediaDevices.getUserMedia` / `desktopCapturer` para capturar áudio/vídeo e exibe o overlay flutuante.
+2. **Captura & Composição**: O Renderer (`renderer.js`) captura áudio/vídeo e aplica o `videoCompositor.js` (se configurado) para renderizar Spotlight do cursor, ripples de clique e desfoque de privacidade a 60 FPS.
 3. **Detecção de Silêncio**: O Renderer monitora o áudio usando `AudioContext` e `AnalyserNode`. Se houver silêncio pelo tempo configurado (`autoStopSilenceMinutes`), dispara o auto-stop.
-4. **Finalização**: Os Chunks gravados via `MediaRecorder` são enviados para o Main Process (`save-file`).
-5. **Pós-processamento**: `main.js` salva os arquivos e chama `ffmpegService.js` para converter/otimizar o áudio para MP3 se configurado.
+4. **Overlay Reativo**: O nível `vuLevel` é transmitido para `overlay.js` via IPC para acionar o Voice Activity Ambient Glow.
+5. **Finalização**: Os Chunks gravados via `MediaRecorder` são enviados para o Main Process (`save-file`).
+6. **Pós-processamento**: `main.js` salva os arquivos e chama `ffmpegService.js` para converter o áudio para MP3 e gerar o banner senoidal `_waveform.png`.
 
 ---
 
@@ -78,7 +80,7 @@ Para evitar busca no código, aqui estão os principais canais expostos em `wind
 | `save-file` | `invoke` | Renderer -> Main | Envia os blobs gravados para salvamento no sistema de arquivos |
 | `get-library-videos` | `invoke` | Renderer -> Main | Retorna a lista de gravações salvas na pasta configurada |
 | `show-overlay` / `hide-overlay` | `send` | Renderer -> Main | Exibe ou oculta o widget de overlay |
-| `overlay-update` / `sync-overlay` | `on`/`send` | Bidirecional | Sincroniza estado de gravação, timer e título entre Main e Overlay |
+| `overlay-update` / `sync-overlay` | `on`/`send` | Bidirecional | Sincroniza estado de gravação, timer, volume e título entre Main e Overlay |
 | `get-organization-config` / `update-organization-config` | `invoke` | Renderer -> Main | Gerencia templates de organização de arquivos |
 | `update-recording-tags` / `get-tag-categories` | `invoke` | Renderer -> Main | Gerencia sistema de tags de reuniões |
 
@@ -99,6 +101,14 @@ Configuração padrão definida em `main.js`:
     "archivePath": "",
     "compressionEnabled": false,
     "separateVideoFolder": false
+  },
+  "visualEffectsConfig": {
+    "cursorSpotlight": true,
+    "clickRipples": true,
+    "privacyBlur": false,
+    "lowerThirds": true,
+    "generateWaveformBanner": true,
+    "performanceProfile": "balanced"
   },
   "tagCategories": []
 }

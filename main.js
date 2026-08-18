@@ -30,6 +30,14 @@ const store = new Store({
             compressionEnabled: false,
             separateVideoFolder: false
         },
+        visualEffectsConfig: {
+            cursorSpotlight: true,
+            clickRipples: true,
+            privacyBlur: false,
+            lowerThirds: true,
+            generateWaveformBanner: true,
+            performanceProfile: 'balanced'
+        },
         tagCategories: []
     }
 });
@@ -393,12 +401,14 @@ ipcMain.handle('save-file', async (event, { buffer, fileName, metadata, hasVideo
 
     try {
         fs.writeFileSync(tempWebmPath, Buffer.from(buffer));
+        const visualEffectsConfig = store.get('visualEffectsConfig') || {};
         return await convertToMp3AndSave({
             tempWebmPath,
             finalMp3Path,
             finalWebmPath,
             hasVideo,
-            metadata
+            metadata,
+            visualEffectsConfig
         });
     } catch (error) {
         console.error('Error saving file:', error);

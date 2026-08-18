@@ -10,16 +10,21 @@ export class AudioVisualizer {
         this.container = document.getElementById(containerId);
         this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
         
-        // Modos disponíveis: 'spectrum', 'wave', 'led', 'radial'
+        // Modos disponíveis: 'spectrum', 'wave', 'led', 'helix', 'liquid', 'aurora', 'plasma', 'prism'
         const savedMode = localStorage.getItem('meet_record_visualizer_mode');
-        this.mode = savedMode || 'spectrum';
+        const invalidModes = ['particles', 'orbit', 'cyber', 'tunnel', 'radial'];
+        this.mode = invalidModes.includes(savedMode) ? 'helix' : (savedMode || 'spectrum');
         
         // Estado de física dos picos para o modo espectro
         this.peaks = [];
         this.peakHold = [];
         this.gravity = 0.45; // Queda mais suave e lenta dos picos
-        
-        // Fase de animação para o estado standby/repouso
+
+        // Fases de animação para os modos dinâmicos
+        this.helixPhase = 0;
+        this.liquidPhase = 0;
+        this.auroraPhase = 0;
+        this.plasmaPhase = 0;
         this.idlePhase = 0;
         
         // Nível VU (Volume Meter) suavizado
@@ -38,7 +43,7 @@ export class AudioVisualizer {
     }
 
     setMode(newMode) {
-        if (['spectrum', 'wave', 'led', 'radial'].includes(newMode)) {
+        if (['spectrum', 'wave', 'led', 'helix', 'liquid', 'aurora', 'plasma', 'prism'].includes(newMode)) {
             this.mode = newMode;
             localStorage.setItem('meet_record_visualizer_mode', newMode);
             this.peaks = [];
@@ -69,7 +74,7 @@ export class AudioVisualizer {
     /**
      * Função principal de renderização acionada pelo requestAnimationFrame
      */
-    draw(dataArray, isRecording = false, isPaused = false) {
+    draw(dataArray, isActive = false, isPaused = false) {
         if (!this.canvas || !this.ctx) return;
         const ctx = this.ctx;
         const w = this.width;
@@ -80,7 +85,7 @@ export class AudioVisualizer {
         // Verificar se há dados ativos de áudio
         let hasAudioData = false;
         let sum = 0;
-        if (dataArray && dataArray.length > 0 && isRecording && !isPaused) {
+        if (dataArray && dataArray.length > 0 && isActive && !isPaused) {
             for (let i = 0; i < dataArray.length; i++) {
                 sum += dataArray[i];
             }
@@ -109,8 +114,20 @@ export class AudioVisualizer {
             case 'led':
                 this.drawLED(dataArray, w, h);
                 break;
-            case 'radial':
-                this.drawRadial(dataArray, w, h);
+            case 'helix':
+                this.drawHelix(dataArray, w, h);
+                break;
+            case 'liquid':
+                this.drawLiquid(dataArray, w, h);
+                break;
+            case 'aurora':
+                this.drawAurora(dataArray, w, h);
+                break;
+            case 'plasma':
+                this.drawPlasma(dataArray, w, h);
+                break;
+            case 'prism':
+                this.drawPrism(dataArray, w, h);
                 break;
             case 'spectrum':
             default:
@@ -362,51 +379,419 @@ export class AudioVisualizer {
     }
 
     /**
-     * MODO 4: Pulso Radial (Radial Frequency Core)
+     * MODO 4: Dupla Hélice Quântica 3D (Quantum Helix)
      */
-    drawRadial(dataArray, w, h) {
+    drawHelix(dataArray, w, h) {
         const ctx = this.ctx;
-        const centerX = w / 2;
+        this.helixPhase = (this.helixPhase || 0) + 0.04;
         const centerY = h / 2;
-        const baseRadius = Math.min(w, h) * 0.22;
+        const nodes = 28;
+        const step = w / nodes;
 
-        // Calcular bass energia para o pulso central
-        const bass = (dataArray[0] + dataArray[1] + dataArray[2] + dataArray[3]) / (4 * 255);
-        const pulseRadius = baseRadius + bass * 8;
+        const bassSum = (dataArray[0] + dataArray[1] + dataArray[2] + dataArray[3]) / (4 * 255);
+        const midSum = (dataArray[8] + dataArray[12] + dataArray[16]) / (3 * 255);
+        const energy = bassSum * 0.5 + midSum * 0.4;
 
-        // 1. Núcleo Pulsante Central
-        const coreGradient = ctx.createRadialGradient(centerX, centerY, 2, centerX, centerY, pulseRadius);
-        coreGradient.addColorStop(0, 'rgba(56, 189, 248, 0.9)');
-        coreGradient.addColorStop(0.7, 'rgba(129, 140, 248, 0.4)');
-        coreGradient.addColorStop(1, 'rgba(192, 132, 252, 0.0)');
+        const strandA = [];
+        const strandB = [];
 
+        // 1. Calcular Nós 3D da Dupla Hélice
+        for (let i = 0; i <= nodes; i++) {
+            const x = i * step;
+            const dataIdx = Math.floor((i / nodes) * (dataArray.length * 0.65));
+            const freqVal = (dataArray[dataIdx] || 0) / 255;
+
+            // Ângulo de rotação 3D da fita
+            const angle = this.helixPhase + i * 0.32;
+            const sinVal = Math.sin(angle);
+            const cosVal = Math.cos(angle); // Profundidade Z (-1 a 1)
+
+            // Amplitude responsiva: no silêncio é suave (~10px), na fala expande até 28px
+            const amp = 8 + (freqVal * (h * 0.38)) + (bassSum * 8);
+
+            const yA = centerY + sinVal * amp;
+            const yB = centerY - sinVal * amp;
+
+            strandA.push({ x, y: yA, z: cosVal, freqVal });
+            strandB.push({ x, y: yB, z: -cosVal, freqVal });
+        }
+
+        // 2. Desenhar Pontes de Ressonância (Conectores entre as fitas)
+        for (let i = 0; i <= nodes; i++) {
+            const pA = strandA[i];
+            const pB = strandB[i];
+
+            if (pA.freqVal > 0.05 || energy > 0.08) {
+                ctx.beginPath();
+                ctx.moveTo(pA.x, pA.y);
+                ctx.lineTo(pB.x, pB.y);
+
+                const bridgeAlpha = Math.min(0.85, 0.15 + pA.freqVal * 0.7);
+                ctx.strokeStyle = `rgba(168, 85, 247, ${bridgeAlpha})`;
+                ctx.lineWidth = 1 + pA.freqVal * 2;
+                ctx.stroke();
+
+                // Ponto central de pulso no cruzamento
+                if (pA.freqVal > 0.2) {
+                    const midY = (pA.y + pB.y) / 2;
+                    ctx.beginPath();
+                    ctx.arc(pA.x, midY, 1.5 + pA.freqVal * 2, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.shadowColor = '#a855f7';
+                    ctx.shadowBlur = 6;
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                }
+            }
+        }
+
+        // Função auxiliar para desenhar uma fita com curvas suaves
+        const drawStrand = (strand, color, strokeColor, shadowColor) => {
+            ctx.beginPath();
+            ctx.moveTo(strand[0].x, strand[0].y);
+            for (let i = 0; i < strand.length - 1; i++) {
+                const xc = (strand[i].x + strand[i + 1].x) / 2;
+                const yc = (strand[i].y + strand[i + 1].y) / 2;
+                ctx.quadraticCurveTo(strand[i].x, strand[i].y, xc, yc);
+            }
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 2.2;
+            if (energy > 0.12) {
+                ctx.shadowColor = shadowColor;
+                ctx.shadowBlur = 8 + energy * 10;
+            }
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Desenhar esferas nos nós frontais (Z > 0)
+            strand.forEach(pt => {
+                if (pt.z > -0.2) {
+                    const nodeRadius = Math.max(2, 2.5 + pt.freqVal * 3 + (pt.z * 1.2));
+                    ctx.beginPath();
+                    ctx.arc(pt.x, pt.y, nodeRadius, 0, Math.PI * 2);
+                    ctx.fillStyle = color;
+                    if (pt.freqVal > 0.15) {
+                        ctx.shadowColor = shadowColor;
+                        ctx.shadowBlur = 8;
+                    }
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                }
+            });
+        };
+
+        // 3. Desenhar Fita Alpha (Ciano Neon)
+        drawStrand(strandA, '#38bdf8', '#0284c7', '#38bdf8');
+
+        // 4. Desenhar Fita Beta (Rosa Neon / Violeta)
+        drawStrand(strandB, '#ec4899', '#db2777', '#ec4899');
+    }
+
+    /**
+     * MODO 5: Chamas Fluidas de Plasma Neon (Plasma Waves)
+     */
+    drawPlasma(dataArray, w, h) {
+        const ctx = this.ctx;
+        this.plasmaPhase = (this.plasmaPhase || 0) + 0.035;
+        const numTongues = 28;
+        const colWidth = w / numTongues;
+
+        const bassSum = (dataArray[0] + dataArray[1] + dataArray[2] + dataArray[3]) / (4 * 255);
+        const midSum = (dataArray[8] + dataArray[12] + dataArray[16]) / (3 * 255);
+        const energy = bassSum * 0.5 + midSum * 0.4;
+
+        // 1. Camada de Fundo: Brilho de Calor de Plasma
+        if (energy > 0.04) {
+            const glowGrad = ctx.createLinearGradient(0, h * 0.4, 0, h);
+            glowGrad.addColorStop(0, 'rgba(168, 85, 247, 0)');
+            glowGrad.addColorStop(0.6, `rgba(168, 85, 247, ${0.12 + energy * 0.25})`);
+            glowGrad.addColorStop(1, `rgba(56, 189, 248, ${0.2 + energy * 0.35})`);
+            ctx.fillStyle = glowGrad;
+            ctx.fillRect(0, 0, w, h);
+        }
+
+        // 2. Pontos das Chamas Superiores
+        const flamePoints = [];
+        for (let i = 0; i <= numTongues; i++) {
+            const x = i * colWidth;
+            const dataIdx = Math.floor((i / numTongues) * (dataArray.length * 0.6));
+            const freqVal = (dataArray[dataIdx] || 0) / 255;
+
+            // Ondulação de chamas orgânica
+            const flameWiggle = Math.sin(this.plasmaPhase * 1.5 + i * 0.35) * (3 + energy * 6) +
+                                Math.cos(this.plasmaPhase * 0.8 + i * 0.5) * (2 + bassSum * 4);
+            const flameHeight = Math.max(3, (freqVal * (h * 0.75)) + 4 + flameWiggle);
+            const y = Math.max(4, h - flameHeight);
+            flamePoints.push({ x, y, freqVal });
+        }
+
+        // 3. Desenhar Corpo Principal da Chama com Gradiente Neon (Ciano -> Violeta -> Rosa)
+        ctx.save();
         ctx.beginPath();
-        ctx.arc(centerX, centerY, pulseRadius, 0, Math.PI * 2);
-        ctx.fillStyle = coreGradient;
+        ctx.moveTo(0, h);
+        ctx.lineTo(flamePoints[0].x, flamePoints[0].y);
+
+        for (let i = 0; i < flamePoints.length - 1; i++) {
+            const xc = (flamePoints[i].x + flamePoints[i + 1].x) / 2;
+            const yc = (flamePoints[i].y + flamePoints[i + 1].y) / 2;
+            ctx.quadraticCurveTo(flamePoints[i].x, flamePoints[i].y, xc, yc);
+        }
+        ctx.lineTo(w, flamePoints[flamePoints.length - 1].y);
+        ctx.lineTo(w, h);
+        ctx.closePath();
+
+        const plasmaGrad = ctx.createLinearGradient(0, h * 0.2, 0, h);
+        plasmaGrad.addColorStop(0, 'rgba(236, 72, 153, 0.85)'); // Rosa Neon no topo
+        plasmaGrad.addColorStop(0.4, 'rgba(168, 85, 247, 0.75)'); // Violeta no meio
+        plasmaGrad.addColorStop(0.8, 'rgba(56, 189, 248, 0.85)'); // Ciano na base
+        plasmaGrad.addColorStop(1, 'rgba(14, 165, 233, 0.95)');
+
+        ctx.fillStyle = plasmaGrad;
         ctx.fill();
 
-        // 2. Raios de Frequência Radiais
-        const numSpokes = 48;
-        const sliceLength = Math.floor(dataArray.length * 0.75);
+        // 4. Crista Iluminada com Glow de Calor
+        ctx.beginPath();
+        ctx.moveTo(flamePoints[0].x, flamePoints[0].y);
+        for (let i = 0; i < flamePoints.length - 1; i++) {
+            const xc = (flamePoints[i].x + flamePoints[i + 1].x) / 2;
+            const yc = (flamePoints[i].y + flamePoints[i + 1].y) / 2;
+            ctx.quadraticCurveTo(flamePoints[i].x, flamePoints[i].y, xc, yc);
+        }
+        ctx.strokeStyle = '#f472b6';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = '#f472b6';
+        ctx.shadowBlur = 8 + energy * 12;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
 
-        for (let i = 0; i < numSpokes; i++) {
-            const angle = (i / numSpokes) * Math.PI * 2;
-            const dataIdx = Math.floor((i / numSpokes) * sliceLength);
-            const val = dataArray[dataIdx] || 0;
-            const length = (val / 255) * (Math.min(w, h) * 0.28);
+        // 5. Núcleo Interno Branco-Ciano (Fogo Interno mais quente)
+        ctx.beginPath();
+        ctx.moveTo(0, h);
+        ctx.lineTo(flamePoints[0].x, h - (h - flamePoints[0].y) * 0.5);
 
-            const x1 = centerX + Math.cos(angle) * (pulseRadius + 2);
-            const y1 = centerY + Math.sin(angle) * (pulseRadius + 2);
-            const x2 = centerX + Math.cos(angle) * (pulseRadius + 2 + length);
-            const y2 = centerY + Math.sin(angle) * (pulseRadius + 2 + length);
+        for (let i = 0; i < flamePoints.length - 1; i++) {
+            const y1 = h - (h - flamePoints[i].y) * 0.55;
+            const y2 = h - (h - flamePoints[i + 1].y) * 0.55;
+            const xc = (flamePoints[i].x + flamePoints[i + 1].x) / 2;
+            const yc = (y1 + y2) / 2;
+            ctx.quadraticCurveTo(flamePoints[i].x, y1, xc, yc);
+        }
+        ctx.lineTo(w, h);
+        ctx.closePath();
 
-            ctx.strokeStyle = `hsl(${190 + (i / numSpokes) * 120}, 90%, 65%)`;
-            ctx.lineWidth = 2.5;
-            ctx.lineCap = 'round';
+        const innerGrad = ctx.createLinearGradient(0, h * 0.5, 0, h);
+        innerGrad.addColorStop(0, 'rgba(255, 255, 255, 0.6)');
+        innerGrad.addColorStop(0.7, 'rgba(56, 189, 248, 0.5)');
+        innerGrad.addColorStop(1, 'rgba(15, 23, 42, 0)');
+        ctx.fillStyle = innerGrad;
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    /**
+     * MODO 6: Ondas Líquidas Multicamadas (Liquid Waves)
+     */
+    drawLiquid(dataArray, w, h) {
+        const ctx = this.ctx;
+        this.liquidPhase += 0.035;
+        const centerY = h * 0.65;
+
+        // Bandas de áudio para cada onda
+        const bassVal = (dataArray[0] + dataArray[1] + dataArray[2] + dataArray[3]) / (4 * 255);
+        const midVal = (dataArray[8] + dataArray[12] + dataArray[16]) / (3 * 255);
+        const trebleVal = (dataArray[20] + dataArray[24] + dataArray[28]) / (3 * 255);
+
+        const waves = [
+            {
+                phase: this.liquidPhase,
+                speed: 0.02,
+                freq: 0.015,
+                amp: 10 + bassVal * (h * 0.45),
+                color: 'rgba(56, 189, 248, 0.35)',
+                stroke: '#38bdf8'
+            },
+            {
+                phase: this.liquidPhase * 1.3 + 1.2,
+                speed: 0.03,
+                freq: 0.022,
+                amp: 8 + midVal * (h * 0.4),
+                color: 'rgba(168, 85, 247, 0.35)',
+                stroke: '#a855f7'
+            },
+            {
+                phase: this.liquidPhase * 0.8 + 2.4,
+                speed: 0.025,
+                freq: 0.03,
+                amp: 6 + trebleVal * (h * 0.35),
+                color: 'rgba(244, 63, 94, 0.3)',
+                stroke: '#f43f5e'
+            }
+        ];
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        waves.forEach(wave => {
             ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
+            ctx.moveTo(0, h);
+
+            const segments = 24;
+            const step = w / segments;
+            const pts = [];
+
+            for (let i = 0; i <= segments; i++) {
+                const x = i * step;
+                const dataIdx = Math.floor((i / segments) * (dataArray.length * 0.5));
+                const audioSample = (dataArray[dataIdx] || 0) / 255;
+                const dynamicAmp = wave.amp * (0.4 + audioSample * 0.6);
+                const y = centerY - Math.sin(wave.phase + x * wave.freq) * dynamicAmp;
+                pts.push({ x, y });
+            }
+
+            ctx.lineTo(pts[0].x, pts[0].y);
+            for (let i = 0; i < pts.length - 1; i++) {
+                const xc = (pts[i].x + pts[i + 1].x) / 2;
+                const yc = (pts[i].y + pts[i + 1].y) / 2;
+                ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+            }
+            ctx.lineTo(w, pts[pts.length - 1].y);
+            ctx.lineTo(w, h);
+            ctx.closePath();
+
+            const grad = ctx.createLinearGradient(0, centerY - wave.amp, 0, h);
+            grad.addColorStop(0, wave.color);
+            grad.addColorStop(1, 'rgba(15, 23, 42, 0.05)');
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (let i = 0; i < pts.length - 1; i++) {
+                const xc = (pts[i].x + pts[i + 1].x) / 2;
+                const yc = (pts[i].y + pts[i + 1].y) / 2;
+                ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+            }
+            ctx.strokeStyle = wave.stroke;
+            ctx.lineWidth = 1.5;
+            ctx.shadowColor = wave.stroke;
+            ctx.shadowBlur = 6;
             ctx.stroke();
+            ctx.shadowBlur = 0;
+        });
+
+        ctx.restore();
+    }
+
+    /**
+     * MODO 7: Aurora Boreal Fluorescente (Aurora Waves)
+     */
+    drawAurora(dataArray, w, h) {
+        const ctx = this.ctx;
+        this.auroraPhase += 0.028;
+        const columns = 36;
+        const colWidth = w / columns;
+
+        const bassSum = (dataArray[0] + dataArray[1] + dataArray[2] + dataArray[3]) / (4 * 255);
+        const topPoints = [];
+
+        for (let i = 0; i < columns; i++) {
+            const x = i * colWidth + colWidth / 2;
+            const dataIdx = Math.floor((i / columns) * (dataArray.length * 0.65));
+            const freqVal = (dataArray[dataIdx] || 0) / 255;
+
+            const waveOffset = Math.sin(this.auroraPhase + i * 0.22) * (6 + bassSum * 8);
+            const heightFactor = Math.min(h * 0.85, (freqVal * (h * 0.7)) + 8 + waveOffset);
+            const topY = Math.max(4, h - heightFactor);
+            topPoints.push({ x, y: topY });
+
+            const beamGrad = ctx.createLinearGradient(x, topY, x, h);
+            beamGrad.addColorStop(0, `hsla(${150 + i * 4}, 90%, 65%, ${0.5 + freqVal * 0.45})`);
+            beamGrad.addColorStop(0.5, `hsla(${190 + i * 3}, 90%, 60%, ${0.3 + freqVal * 0.3})`);
+            beamGrad.addColorStop(1, 'rgba(16, 185, 129, 0)');
+
+            ctx.fillStyle = beamGrad;
+            ctx.fillRect(x - colWidth / 2, topY, colWidth - 1, h - topY);
+        }
+
+        if (topPoints.length > 1) {
+            ctx.beginPath();
+            ctx.moveTo(topPoints[0].x, topPoints[0].y);
+            for (let i = 0; i < topPoints.length - 1; i++) {
+                const xc = (topPoints[i].x + topPoints[i + 1].x) / 2;
+                const yc = (topPoints[i].y + topPoints[i + 1].y) / 2;
+                ctx.quadraticCurveTo(topPoints[i].x, topPoints[i].y, xc, yc);
+            }
+            ctx.strokeStyle = '#34d399';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#34d399';
+            ctx.shadowBlur = 10 + bassSum * 10;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+    }
+
+    /**
+     * MODO 6: Prisma Cristalino Dual Espelhado (Crystal Prism)
+     */
+    drawPrism(dataArray, w, h) {
+        const ctx = this.ctx;
+        const centerY = h / 2;
+        const bars = 40;
+        const barWidth = (w / bars) * 0.7;
+        const gap = (w / bars) * 0.3;
+
+        const bassSum = (dataArray[0] + dataArray[1] + dataArray[2] + dataArray[3]) / (4 * 255);
+        const energy = (dataArray.slice(0, 32).reduce((a, b) => a + b, 0)) / (32 * 255);
+
+        // 1. Linha de Centro Cristalina
+        ctx.beginPath();
+        ctx.moveTo(0, centerY);
+        ctx.lineTo(w, centerY);
+        ctx.strokeStyle = `rgba(56, 189, 248, ${0.3 + energy * 0.5})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // 2. Barras Espelhadas Topo e Fundo com Reflexo de Vidro
+        for (let i = 0; i < bars; i++) {
+            const x = i * (barWidth + gap) + gap / 2;
+            const dataIdx = Math.floor((i / bars) * (dataArray.length * 0.65));
+            const normVal = (dataArray[dataIdx] || 0) / 255;
+
+            // Altura da barra
+            const barHeight = Math.max(2, normVal * (h * 0.44) + (energy > 0.05 ? 2 : 0));
+            const hue = 175 + (i / bars) * 135; // Esmeralda -> Ciano -> Violeta -> Magenta
+
+            // Barra Superior
+            const topGrad = ctx.createLinearGradient(x, centerY, x, centerY - barHeight);
+            topGrad.addColorStop(0, `hsla(${hue}, 90%, 65%, 0.9)`);
+            topGrad.addColorStop(1, `hsla(${hue + 25}, 95%, 70%, 0.4)`);
+
+            ctx.fillStyle = topGrad;
+            ctx.beginPath();
+            ctx.roundRect(x, centerY - barHeight, barWidth, barHeight, [2, 2, 0, 0]);
+            ctx.fill();
+
+            // Barra Inferior Espelhada (com opacidade de reflexão)
+            const botGrad = ctx.createLinearGradient(x, centerY, x, centerY + barHeight);
+            botGrad.addColorStop(0, `hsla(${hue}, 90%, 65%, 0.6)`);
+            botGrad.addColorStop(1, `hsla(${hue + 25}, 95%, 70%, 0.1)`);
+
+            ctx.fillStyle = botGrad;
+            ctx.beginPath();
+            ctx.roundRect(x, centerY, barWidth, barHeight * 0.75, [0, 0, 2, 2]);
+            ctx.fill();
+
+            // Ponto de Pico de Luz de Cristal
+            if (normVal > 0.15) {
+                ctx.beginPath();
+                ctx.arc(x + barWidth / 2, centerY - barHeight - 1.5, 1.5, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.shadowColor = `hsl(${hue}, 90%, 65%)`;
+                ctx.shadowBlur = 6;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
         }
     }
 

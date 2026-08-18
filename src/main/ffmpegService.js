@@ -15,7 +15,26 @@ function getFfmpegPath() {
     return 'ffmpeg'; // System PATH fallback
 }
 
-export async function convertToMp3AndSave({ tempWebmPath, finalMp3Path, finalWebmPath, hasVideo, metadata }) {
+export async function generateSoundwaveBanner(inputAudioPath, outputImagePath) {
+    const ffmpegExe = getFfmpegPath();
+    if (!fs.existsSync(inputAudioPath)) return false;
+
+    // Gerar onda senoidal estilizada com gradiente neon ciano ⇄ violeta
+    const ffmpegCmd = `"${ffmpegExe}" -y -i "${inputAudioPath}" -filter_complex "aformat=channel_layouts=mono,showwavespic=s=800x160:colors=0x38bdf8|0x818cf8" -frames:v 1 "${outputImagePath}"`;
+
+    return new Promise((resolve) => {
+        exec(ffmpegCmd, (err) => {
+            if (err) {
+                console.warn('Falha ao gerar banner de waveform com FFmpeg:', err.message);
+                resolve(false);
+            } else {
+                resolve(true);
+            }
+        });
+    });
+}
+
+export async function convertToMp3AndSave({ tempWebmPath, finalMp3Path, finalWebmPath, hasVideo, metadata, visualEffectsConfig = {} }) {
     const ffmpegExe = getFfmpegPath();
     
     let metadataArgs = '';
@@ -55,6 +74,12 @@ export async function convertToMp3AndSave({ tempWebmPath, finalMp3Path, finalWeb
                     if (fs.existsSync(tempWebmPath)) {
                         await fs.promises.unlink(tempWebmPath);
                     }
+                }
+
+                // Gerar banner de onda sonora (waveform.png) se habilitado
+                if (visualEffectsConfig.generateWaveformBanner !== false) {
+                    const waveformPath = finalMp3Path.replace(/\.mp3$/, '_waveform.png');
+                    await generateSoundwaveBanner(finalMp3Path, waveformPath);
                 }
 
                 // Save JSON metadata

@@ -1,8 +1,11 @@
 import { getAudioInputDevices, createMixedAudioStream } from './src/renderer/audioDeviceManager.js';
-import { openAudioRecording, stopPlaybackAudio } from './src/renderer/audioPlayer.js';
+import { openAudioRecording, stopPlaybackAudio, isPlaybackActive, isPlaybackPaused, getPlaybackFrequencyData } from './src/renderer/audioPlayer.js';
 import { initLibraryManager, renderLibraryUI } from './src/renderer/libraryManager.js';
 import { openTagEditorModal } from './src/renderer/tagEditor.js';
 import { AudioVisualizer } from './src/renderer/audioVisualizer.js';
+import { VideoCompositor } from './src/renderer/videoCompositor.js';
+
+let videoCompositor = null;
 
 const statusDot = document.getElementById('statusDot');
 const statusLabel = document.getElementById('statusLabel');
@@ -87,6 +90,11 @@ async function init() {
 
     // Setup Visualizer Engine & UI Mode Selectors
     visualizerEngine = new AudioVisualizer('visualizerCanvas', 'mainVisualizer');
+    visualizerEngine.onVuUpdate = (vu) => {
+        if (isRecording && !isPaused) {
+            window.electronAPI.syncOverlay({ vuLevel: vu });
+        }
+    };
 
     // Configurar botões de alternância de modos visuais
     const modeSelector = document.getElementById('vizModeSelector');
@@ -239,6 +247,23 @@ async function init() {
         if (e.key === 'Escape') exitEditMode(false);
     });
     titleInput.addEventListener('blur', () => exitEditMode(true));
+
+    // Mouse tracking & ripples para VideoCompositor em gravações de tela
+    window.addEventListener('mousemove', (e) => {
+        if (videoCompositor && isRecording && isRecordingVideo) {
+            const nx = e.clientX / window.innerWidth;
+            const ny = e.clientY / window.innerHeight;
+            videoCompositor.setCursorPosition(nx, ny);
+        }
+    });
+
+    window.addEventListener('mousedown', (e) => {
+        if (videoCompositor && isRecording && isRecordingVideo) {
+            const nx = e.clientX / window.innerWidth;
+            const ny = e.clientY / window.innerHeight;
+            videoCompositor.addClick(nx, ny, e.button === 2 ? 'right' : 'left');
+        }
+    });
 }
 
 async function loadAudioDevices() {
@@ -475,7 +500,27 @@ async function startRecording(sourceId, handle, hasVideo = false) {
 
         if (hasVideo) {
             mimeType = 'video/webm;codecs=vp9,opus';
-            streamToRecord = combinedStream;
+            const fxConfig = config.visualEffectsConfig || {};
+            const rawVideoTracks = rawStream.getVideoTracks();
+
+            // Usar compositor de vídeo se efeitos estiverem ativos
+            if (rawVideoTracks.length > 0 && (fxConfig.cursorSpotlight !== false || fxConfig.clickRipples !== false || fxConfig.privacyBlur === true)) {
+                try {
+                    videoCompositor = new VideoCompositor({
+                        cursorSpotlight: fxConfig.cursorSpotlight !== false,
+                        clickRipples: fxConfig.clickRipples !== false,
+                        privacyBlur: fxConfig.privacyBlur === true,
+                        performanceProfile: fxConfig.performanceProfile || 'balanced'
+                    });
+                    const { composedTrack } = await videoCompositor.start(rawVideoTracks[0]);
+                    streamToRecord = new MediaStream([composedTrack, ...combinedStream.getAudioTracks()]);
+                } catch (compErr) {
+                    console.warn("Falha ao iniciar compositor de vídeo, utilizando stream direto:", compErr);
+                    streamToRecord = combinedStream;
+                }
+            } else {
+                streamToRecord = combinedStream;
+            }
         }
 
         mediaRecorder = new MediaRecorder(streamToRecord, { mimeType });
@@ -586,6 +631,11 @@ function stopRecording(isManual = false) {
             video.remove();
         }
         globalStream = null;
+
+        if (videoCompositor) {
+            videoCompositor.stop();
+            videoCompositor = null;
+        }
         
         notesContainer.classList.add('hidden');
         resetVisualizer();
@@ -669,40 +719,52 @@ function drawVisualizer() {
     }
     animationId = requestAnimationFrame(drawVisualizer);
     
-    if (analyser && dataArray) {
-        analyser.getByteFrequencyData(dataArray);
+    if (isRecording) {
+        if (analyser && dataArray) {
+            analyser.getByteFrequencyData(dataArray);
 
-        if (isRecording && !isPaused) {
-            let total = 0;
-            for (let i = 0; i < dataArray.length; i++) {
-                total += dataArray[i];
-            }
-            if (total === 0) {
-                silenceCounter++;
-                if (silenceCounter > 600 && !isAudioSilentWarningShown) {
-                    isAudioSilentWarningShown = true;
-                    if (statusLabel) {
-                        statusLabel.textContent = isRecordingVideo 
-                            ? "Gravando Vídeo + Áudio... (⚠️ Sem som no sistema)" 
-                            : "Gravando Áudio... (⚠️ Sem som no sistema)";
-                    }
+            if (!isPaused) {
+                let total = 0;
+                for (let i = 0; i < dataArray.length; i++) {
+                    total += dataArray[i];
                 }
-            } else {
-                silenceCounter = 0;
-                if (isAudioSilentWarningShown) {
-                    isAudioSilentWarningShown = false;
-                    if (statusLabel) {
-                        statusLabel.textContent = isRecordingVideo 
-                            ? "Gravando Vídeo + Áudio..." 
-                            : "Gravando Áudio...";
+                if (total === 0) {
+                    silenceCounter++;
+                    if (silenceCounter > 600 && !isAudioSilentWarningShown) {
+                        isAudioSilentWarningShown = true;
+                        if (statusLabel) {
+                            statusLabel.textContent = isRecordingVideo 
+                                ? "Gravando Vídeo + Áudio... (⚠️ Sem som no sistema)" 
+                                : "Gravando Áudio... (⚠️ Sem som no sistema)";
+                        }
+                    }
+                } else {
+                    silenceCounter = 0;
+                    if (isAudioSilentWarningShown) {
+                        isAudioSilentWarningShown = false;
+                        if (statusLabel) {
+                            statusLabel.textContent = isRecordingVideo 
+                                ? "Gravando Vídeo + Áudio..." 
+                                : "Gravando Áudio...";
+                        }
                     }
                 }
             }
         }
-    }
 
-    if (visualizerEngine) {
-        visualizerEngine.draw(dataArray, isRecording, isPaused);
+        if (visualizerEngine) {
+            visualizerEngine.draw(dataArray, true, isPaused);
+        }
+    } else if (isPlaybackActive()) {
+        const playbackData = getPlaybackFrequencyData();
+        const paused = isPlaybackPaused();
+        if (visualizerEngine) {
+            visualizerEngine.draw(playbackData, true, paused);
+        }
+    } else {
+        if (visualizerEngine) {
+            visualizerEngine.draw(null, false, false);
+        }
     }
 }
 
@@ -883,7 +945,8 @@ async function openRecording(filePath) {
     }
     updatePlaybackControlsUI(true);
     statusLabel.textContent = "Reproduzindo...";
-    meetingTitle.textContent = "Modo Player";
+    const fileName = filePath.split(/[\\/]/).pop();
+    meetingTitle.textContent = fileName || "Modo Player";
 
     openAudioRecording(filePath, {
         onStateChange: (state) => {
@@ -892,6 +955,18 @@ async function openRecording(filePath) {
                 statusLabel.textContent = "Aguardando Reunião...";
                 meetingTitle.textContent = "Nenhuma reunião detectada";
                 meetingTime.textContent = "00:00:00";
+            } else if (state === 'playing') {
+                statusLabel.textContent = "Reproduzindo...";
+                if (statusDot) {
+                    statusDot.classList.add('playing');
+                    statusDot.classList.remove('paused');
+                }
+            } else if (state === 'paused') {
+                statusLabel.textContent = "Reprodução Pausada";
+                if (statusDot) {
+                    statusDot.classList.remove('playing');
+                    statusDot.classList.add('paused');
+                }
             }
         }
     });
@@ -905,10 +980,17 @@ function updatePlaybackControlsUI(active) {
             playbackControls.classList.remove('hidden');
             cardControls.classList.add('hidden');
             mainCard.classList.add('playing');
+            if (statusDot) {
+                statusDot.classList.add('playing');
+                statusDot.classList.remove('paused');
+            }
         } else {
             playbackControls.classList.add('hidden');
             cardControls.classList.remove('hidden');
             mainCard.classList.remove('playing');
+            if (statusDot) {
+                statusDot.classList.remove('playing', 'paused');
+            }
         }
     }
 }
