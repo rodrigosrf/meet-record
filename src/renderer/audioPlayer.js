@@ -5,6 +5,23 @@ let playbackAnalyser = null;
 let playbackDataArray = null;
 let currentBlobUrl = null;
 let currentSpeed = 1.0;
+let currentlyPlayingPath = null;
+let currentPlaybackState = 'stopped'; // 'playing' | 'paused' | 'stopped' | 'ended'
+
+export function getCurrentlyPlayingPath() {
+    return currentlyPlayingPath;
+}
+
+export function getPlaybackState() {
+    return currentPlaybackState;
+}
+
+export function togglePlayPauseAudio() {
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    if (playPauseBtn) {
+        playPauseBtn.click();
+    }
+}
 
 function formatTime(seconds) {
     if (isNaN(seconds) || seconds === null) return '00:00';
@@ -109,6 +126,8 @@ export async function openAudioRecording(filePath, { onStateChange } = {}) {
         };
 
         playbackAudio.onended = () => {
+            currentlyPlayingPath = null;
+            currentPlaybackState = 'ended';
             stopPlaybackAudio();
             if (onStateChange) onStateChange('ended');
         };
@@ -134,11 +153,13 @@ export async function openAudioRecording(filePath, { onStateChange } = {}) {
                     } catch (e) {
                         console.warn("Erro ao retomar áudio:", e);
                     }
+                    currentPlaybackState = 'playing';
                     if (playIcon) playIcon.classList.add('hidden');
                     if (pauseIcon) pauseIcon.classList.remove('hidden');
                     if (onStateChange) onStateChange('playing');
                 } else {
                     playbackAudio.pause();
+                    currentPlaybackState = 'paused';
                     if (playIcon) playIcon.classList.remove('hidden');
                     if (pauseIcon) pauseIcon.classList.add('hidden');
                     if (onStateChange) onStateChange('paused');
@@ -183,6 +204,8 @@ export async function openAudioRecording(filePath, { onStateChange } = {}) {
         // Setup Speed Selector Buttons
         setupSpeedButtons();
 
+        currentlyPlayingPath = filePath;
+        currentPlaybackState = 'playing';
         await playbackAudio.play();
         if (playIcon) playIcon.classList.add('hidden');
         if (pauseIcon) pauseIcon.classList.remove('hidden');
@@ -190,12 +213,16 @@ export async function openAudioRecording(filePath, { onStateChange } = {}) {
         if (onStateChange) onStateChange('playing');
 
     } catch (err) {
+        currentlyPlayingPath = null;
+        currentPlaybackState = 'stopped';
         console.error("Error playing audio recording:", err);
         alert("Erro ao carregar arquivo de áudio.");
     }
 }
 
 export function stopPlaybackAudio() {
+    currentlyPlayingPath = null;
+    currentPlaybackState = 'stopped';
     if (playbackAudio) {
         playbackAudio.pause();
         playbackAudio.currentTime = 0;

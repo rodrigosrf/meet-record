@@ -1,8 +1,44 @@
 let tagEditorCurrentPath = '';
 let tagEditorCurrentTags = [];
 let tagEditorIsFavorite = false;
+let currentOnSaveSuccess = null;
+let libraryKnownTags = [];
 
-export function openTagEditorModal(filePath, tags, isFavorite, { onSaveSuccess }) {
+const DEFAULT_PRESET_TAGS = [
+    'Importante',
+    'Alinhamento',
+    '1-on-1',
+    'Sprint',
+    'Cliente',
+    'Apresentação',
+    'Planejamento',
+    'Daily'
+];
+
+const PALETTE = [
+    '#38bdf8', '#818cf8', '#a855f7', '#ec4899', '#f43f5e',
+    '#f97316', '#eab308', '#10b981', '#06b6d4', '#14b8a6'
+];
+
+export function getTagColor(tagName, categories = []) {
+    if (categories && categories.length > 0) {
+        for (const cat of categories) {
+            if (cat.tags && cat.tags.includes(tagName)) return cat.color;
+        }
+    }
+    let hash = 0;
+    for (let i = 0; i < tagName.length; i++) {
+        hash = (hash << 5) - hash + tagName.charCodeAt(i);
+        hash |= 0;
+    }
+    return PALETTE[Math.abs(hash) % PALETTE.length];
+}
+
+export function openTagEditorModal(filePath, tags = [], isFavorite = false, options = {}) {
+    const { onSaveSuccess = null, existingTags = [] } = (options || {});
+    currentOnSaveSuccess = onSaveSuccess;
+    libraryKnownTags = Array.isArray(existingTags) ? existingTags : [];
+
     tagEditorCurrentPath = filePath;
     tagEditorCurrentTags = [...(tags || [])];
     tagEditorIsFavorite = !!isFavorite;
@@ -11,17 +47,27 @@ export function openTagEditorModal(filePath, tags, isFavorite, { onSaveSuccess }
     const favCheckbox = document.getElementById('tagEditorFavorite');
     const backdrop = document.getElementById('tagEditorBackdrop');
     const input = document.getElementById('tagEditorInput');
+    const fileBadge = document.getElementById('tagEditorFileBadge');
 
     if (pathInput) pathInput.value = filePath;
     if (favCheckbox) favCheckbox.checked = tagEditorIsFavorite;
+    
+    if (fileBadge) {
+        const fileName = filePath.split(/[\\/]/).pop();
+        fileBadge.textContent = fileName || '';
+        fileBadge.title = filePath;
+    }
 
     renderCurrentTags();
     renderTagSuggestions();
 
     if (backdrop) backdrop.classList.remove('hidden');
-    if (input) input.focus();
+    if (input) {
+        input.value = '';
+        setTimeout(() => input.focus(), 50);
+    }
 
-    setupTagEditorListeners(onSaveSuccess);
+    setupTagEditorListeners();
 }
 
 export function closeTagEditorModal() {
@@ -29,52 +75,121 @@ export function closeTagEditorModal() {
     if (backdrop) backdrop.classList.add('hidden');
 }
 
-function setupTagEditorListeners(onSaveSuccess) {
+function addTagFromInput() {
+    const input = document.getElementById('tagEditorInput');
+    if (!input) return;
+    const raw = input.value.trim();
+    if (!raw) return;
+
+    // Support comma or semicolon separated tags
+    const parts = raw.split(/[,;]+/).map(t => t.trim()).filter(t => t.length > 0);
+    let changed = false;
+
+    parts.forEach(t => {
+        const normalized = t.replace(/^#/, '');
+        if (normalized && !tagEditorCurrentTags.includes(normalized)) {
+            tagEditorCurrentTags.push(normalized);
+            changed = true;
+        }
+    });
+
+    if (changed) {
+        input.value = '';
+        renderCurrentTags();
+        renderTagSuggestions();
+    }
+}
+
+async function saveAndClose() {
+    const favCheckbox = document.getElementById('tagEditorFavorite');
+    const isFav = favCheckbox ? favCheckbox.checked : tagEditorIsFavorite;
+
+    // Also include any pending text in input
+    addTagFromInput();
+
+    const saveBtn = document.getElementById('saveTagsBtn');
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Salvando...';
+    }
+
+    try {
+        const result = await window.electronAPI.updateRecordingTags({
+            filePath: tagEditorCurrentPath,
+            tags: tagEditorCurrentTags,
+            favorite: isFav
+        });
+
+        if (result && result.success) {
+            closeTagEditorModal();
+            if (typeof currentOnSaveSuccess === 'function') {
+                currentOnSaveSuccess({
+                    filePath: tagEditorCurrentPath,
+                    tags: tagEditorCurrentTags,
+                    favorite: isFav
+                });
+            }
+        } else {
+            alert('Erro ao salvar tags: ' + (result?.error || 'Erro desconhecido'));
+        }
+    } catch (err) {
+        console.error('Erro ao atualizar tags:', err);
+        alert('Erro ao salvar tags: ' + err.message);
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Salvar Tags';
+        }
+    }
+}
+
+let listenersInitialized = false;
+
+function setupTagEditorListeners() {
+    if (listenersInitialized) return;
+    listenersInitialized = true;
+
     const closeBtn = document.getElementById('closeTagEditorBtn');
     const backdrop = document.getElementById('tagEditorBackdrop');
     const saveBtn = document.getElementById('saveTagsBtn');
     const input = document.getElementById('tagEditorInput');
+    const addBtn = document.getElementById('addTagInputBtn');
 
     if (closeBtn) closeBtn.onclick = () => closeTagEditorModal();
+    
     if (backdrop) {
         backdrop.onclick = (e) => {
             if (e.target === backdrop) closeTagEditorModal();
         };
     }
 
+    if (addBtn) {
+        addBtn.onclick = () => {
+            addTagFromInput();
+            if (input) input.focus();
+        };
+    }
+
     if (input) {
         input.onkeydown = (e) => {
             if (e.key === 'Enter') {
-                const tag = input.value.trim().toLowerCase();
-                if (tag && !tagEditorCurrentTags.includes(tag)) {
-                    tagEditorCurrentTags.push(tag);
-                    input.value = '';
-                    renderCurrentTags();
-                    renderTagSuggestions();
+                e.preventDefault();
+                if (e.ctrlKey || input.value.trim() === '') {
+                    saveAndClose();
+                } else {
+                    addTagFromInput();
                 }
+            } else if (e.key === ',') {
+                e.preventDefault();
+                addTagFromInput();
+            } else if (e.key === 'Escape') {
+                closeTagEditorModal();
             }
-            if (e.key === 'Escape') closeTagEditorModal();
         };
     }
 
     if (saveBtn) {
-        saveBtn.onclick = async () => {
-            const favCheckbox = document.getElementById('tagEditorFavorite');
-            const isFav = favCheckbox ? favCheckbox.checked : false;
-
-            const result = await window.electronAPI.updateRecordingTags({
-                filePath: tagEditorCurrentPath,
-                tags: tagEditorCurrentTags,
-                favorite: isFav
-            });
-
-            if (result.success) {
-                closeTagEditorModal();
-                if (onSaveSuccess) onSaveSuccess();
-            } else {
-                alert('Erro ao salvar tags: ' + result.error);
-            }
-        };
+        saveBtn.onclick = () => saveAndClose();
     }
 }
 
@@ -83,14 +198,19 @@ async function renderCurrentTags() {
     if (!container) return;
 
     if (tagEditorCurrentTags.length === 0) {
-        container.innerHTML = '<span class="help-text" style="opacity:0.5;">Nenhuma tag. Adicione abaixo.</span>';
+        container.innerHTML = '<span class="help-text" style="opacity:0.6; font-size:0.8rem;">Nenhuma tag vinculada ainda. Digite ou clique nas sugestões abaixo.</span>';
         return;
     }
 
     const categories = await window.electronAPI.getTagCategories();
     container.innerHTML = tagEditorCurrentTags.map(tag => {
         const color = getTagColor(tag, categories);
-        return `<span class="tag-badge tag-removable" style="background-color: ${color}22; color: ${color}; border: 1px solid ${color}44;">${tag} ×</span>`;
+        return `
+            <span class="tag-badge tag-removable" style="background-color: ${color}22; color: ${color}; border: 1px solid ${color}55;" title="Clique para remover">
+                <span>#${tag}</span>
+                <span class="tag-remove-icon">&times;</span>
+            </span>
+        `;
     }).join('');
 
     container.querySelectorAll('.tag-removable').forEach((el, index) => {
@@ -107,25 +227,56 @@ async function renderTagSuggestions() {
     if (!container) return;
 
     const categories = await window.electronAPI.getTagCategories();
-    const suggestions = [];
+    const suggestionsMap = new Map();
 
-    for (const cat of categories) {
-        for (const tag of cat.tags) {
-            if (!tagEditorCurrentTags.includes(tag)) {
-                suggestions.push({ tag, color: cat.color });
+    // 1. Tags from defined categories in Settings
+    if (Array.isArray(categories)) {
+        for (const cat of categories) {
+            if (Array.isArray(cat.tags)) {
+                for (const tag of cat.tags) {
+                    if (!tagEditorCurrentTags.includes(tag)) {
+                        suggestionsMap.set(tag, { tag, color: cat.color || getTagColor(tag, categories) });
+                    }
+                }
             }
         }
     }
 
+    // 2. Tags already present in other recordings in the library
+    if (Array.isArray(libraryKnownTags)) {
+        for (const tag of libraryKnownTags) {
+            if (!tagEditorCurrentTags.includes(tag) && !suggestionsMap.has(tag)) {
+                suggestionsMap.set(tag, { tag, color: getTagColor(tag, categories) });
+            }
+        }
+    }
+
+    // 3. Default preset tags (smart suggestions)
+    for (const tag of DEFAULT_PRESET_TAGS) {
+        if (!tagEditorCurrentTags.includes(tag) && !suggestionsMap.has(tag)) {
+            suggestionsMap.set(tag, { tag, color: getTagColor(tag, categories) });
+        }
+    }
+
+    const suggestions = Array.from(suggestionsMap.values());
+
     if (suggestions.length === 0) {
-        container.innerHTML = '<span class="help-text" style="font-size:0.7rem;">Configure categorias de tags nas Configurações.</span>';
+        container.innerHTML = '<span class="help-text" style="font-size:0.75rem; opacity:0.7;">Todas as sugestões foram adicionadas!</span>';
         return;
     }
 
-    container.innerHTML = '<span class="help-text" style="font-size:0.7rem; margin-bottom: 4px;">Sugestões:</span>' +
-        suggestions.map(s => 
-            `<span class="tag-badge tag-suggestion" style="background-color: ${s.color}22; color: ${s.color}; border: 1px solid ${s.color}44;">+ ${s.tag}</span>`
-        ).join('');
+    container.innerHTML = `
+        <div class="tag-suggestions-header">
+            <span>💡 Sugestões Rápidas (clique para adicionar):</span>
+        </div>
+        <div class="tag-suggestions-chips">
+            ${suggestions.map(s => `
+                <button type="button" class="tag-badge tag-suggestion" style="background-color: ${s.color}18; color: ${s.color}; border: 1px solid ${s.color}44;" title="Adicionar #${s.tag}">
+                    + #${s.tag}
+                </button>
+            `).join('')}
+        </div>
+    `;
 
     container.querySelectorAll('.tag-suggestion').forEach((el, index) => {
         el.onclick = () => {
@@ -137,13 +288,4 @@ async function renderTagSuggestions() {
             }
         };
     });
-}
-
-function getTagColor(tagName, categories) {
-    if (categories) {
-        for (const cat of categories) {
-            if (cat.tags.includes(tagName)) return cat.color;
-        }
-    }
-    return '#94a3b8';
 }

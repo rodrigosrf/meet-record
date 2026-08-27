@@ -1,6 +1,6 @@
 import { getAudioInputDevices, createMixedAudioStream } from './src/renderer/audioDeviceManager.js';
 import { openAudioRecording, stopPlaybackAudio, isPlaybackActive, isPlaybackPaused, getPlaybackFrequencyData } from './src/renderer/audioPlayer.js';
-import { initLibraryManager, renderLibraryUI } from './src/renderer/libraryManager.js';
+import { initLibraryManager, renderLibraryUI, updateLibraryPlayingState } from './src/renderer/libraryManager.js';
 import { openTagEditorModal } from './src/renderer/tagEditor.js';
 import { AudioVisualizer } from './src/renderer/audioVisualizer.js';
 import { VideoCompositor } from './src/renderer/videoCompositor.js';
@@ -977,6 +977,7 @@ async function openRecording(filePath) {
 
     openAudioRecording(filePath, {
         onStateChange: (state) => {
+            updateLibraryPlayingState(filePath, state);
             if (state === 'stopped' || state === 'ended') {
                 updatePlaybackControlsUI(false);
                 statusLabel.textContent = "Aguardando Reunião...";
@@ -1018,6 +1019,7 @@ function updatePlaybackControlsUI(active) {
             if (statusDot) {
                 statusDot.classList.remove('playing', 'paused');
             }
+            updateLibraryPlayingState(null, 'stopped');
         }
     }
 }

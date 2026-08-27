@@ -257,18 +257,26 @@
     <div class="tag-editor-backdrop hidden" id="tagEditorBackdrop">
         <div class="tag-editor-modal">
             <div class="tag-editor-header">
-                <h3>Editar Tags</h3>
-                <button id="closeTagEditorBtn" class="icon-btn" style="padding:4px;">
+                <div class="tag-editor-header-info">
+                    <h3>🏷️ Tags da Gravação</h3>
+                    <span id="tagEditorFileBadge" class="tag-editor-subtitle"></span>
+                </div>
+                <button id="closeTagEditorBtn" class="icon-btn" style="padding:4px;" title="Fechar">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
             <input type="hidden" id="tagEditorFilePath">
             <div class="tag-editor-body">
+                <div class="tag-editor-section-label">Tags vinculadas:</div>
                 <div class="tag-editor-current" id="tagEditorCurrentTags">
                     <!-- Current tags will be rendered here -->
                 </div>
                 <div class="tag-editor-input-row">
-                    <input type="text" id="tagEditorInput" class="form-input" placeholder="Digite uma tag e pressione Enter...">
+                    <input type="text" id="tagEditorInput" class="form-input" placeholder="Nova tag... (Enter ou vírgula)">
+                    <button type="button" id="addTagInputBtn" class="btn-tag-add">+ Adicionar</button>
+                </div>
+                <div class="tag-editor-shortcuts-hint">
+                    <span>💡 <strong>Enter</strong> adiciona tag &bull; <strong>Ctrl+Enter</strong> salva direto</span>
                 </div>
                 <div class="tag-editor-suggestions" id="tagEditorSuggestions">
                     <!-- Suggested tags from categories -->
