@@ -4,6 +4,7 @@ import { initLibraryManager, renderLibraryUI } from './src/renderer/libraryManag
 import { openTagEditorModal } from './src/renderer/tagEditor.js';
 import { AudioVisualizer } from './src/renderer/audioVisualizer.js';
 import { VideoCompositor } from './src/renderer/videoCompositor.js';
+import { themeManager } from './src/renderer/themeManager.js';
 
 let videoCompositor = null;
 
@@ -34,6 +35,10 @@ const autoRecordCheckbox = document.getElementById('autoRecordCheckbox');
 const titleInput = document.getElementById('titleInput');
 const editTitleBtn = document.getElementById('editTitleBtn');
 const audioDeviceSelect = document.getElementById('audioDeviceSelect');
+
+// Theme Header UI elements
+const themeDropdownBtn = document.getElementById('themeDropdownBtn');
+const themeDropdownMenu = document.getElementById('themeDropdownMenu');
 
 // Cover Screenshot State
 let hasAutoCoverBeenTaken = false;
@@ -74,6 +79,9 @@ let lastPauseStart = 0;
 
 // Initialize App
 async function init() {
+    // Initialize Theme Manager & Ambient Glow
+    themeManager.init();
+
     config = await window.electronAPI.getConfig();
     if (config.outputDirectory) {
         savePathDisplay.textContent = config.outputDirectory;
@@ -91,6 +99,9 @@ async function init() {
     // Setup Visualizer Engine & UI Mode Selectors
     visualizerEngine = new AudioVisualizer('visualizerCanvas', 'mainVisualizer');
     visualizerEngine.onVuUpdate = (vu) => {
+        // Efeito de Iluminação Reativa Ambiente (Ambient Voice Glow)
+        themeManager.applyAmbientGlow(vu);
+
         if (isRecording && !isPaused) {
             window.electronAPI.syncOverlay({ vuLevel: vu });
         }
@@ -108,8 +119,24 @@ async function init() {
             btn.addEventListener('click', () => {
                 modeButtons.forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                if (visualizerEngine) visualizerEngine.setMode(btn.dataset.mode);
+                if (visualizerEngine) {
+                    visualizerEngine.setMode(btn.dataset.mode);
+                }
             });
+        });
+    }
+
+    // Configurar Theme Dropdown
+    if (themeDropdownBtn && themeDropdownMenu) {
+        themeDropdownBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            themeDropdownMenu.classList.toggle('hidden');
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!themeDropdownMenu.contains(e.target) && !themeDropdownBtn.contains(e.target)) {
+                themeDropdownMenu.classList.add('hidden');
+            }
         });
     }
 

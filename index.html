@@ -8,6 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
+    <div class="ambient-glow-ring" id="ambientGlowRing"></div>
     <div class="container">
         <header>
             <div class="logo">
@@ -91,9 +92,9 @@
                                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 3 4 8 5-5 5 15H2L8 3z"></path><path d="M4 14a8 8 0 0 1 16 0"></path></svg>
                                 <span>Hélice</span>
                             </button>
-                            <button class="viz-mode-btn" data-mode="liquid" title="Ondas Líquidas Multicamadas">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>
-                                <span>Líquido</span>
+                            <button class="viz-mode-btn" data-mode="electric" title="Descarga Elétrica & Raios Tesla">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                                <span>Elétrico</span>
                             </button>
                             <button class="viz-mode-btn" data-mode="aurora" title="Aurora Boreal Fluorescente">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"></path><path d="M4 14c2-4 6-4 8 0s6 4 8 0"></path><path d="M4 8c2-4 6-4 8 0s6 4 8 0"></path></svg>
@@ -235,6 +236,18 @@
                         </button>
                     </div>
                     <span id="savePath">Não configurado</span>
+                </div>
+
+                <div class="theme-picker-wrapper">
+                    <button id="themeDropdownBtn" class="theme-btn footer-theme-btn" title="Alterar Tema Visual">
+                        <span id="currentThemeIcon">🌌</span>
+                        <span id="currentThemeLabel" class="theme-btn-label">Deep Space</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                    </button>
+                    <div id="themeDropdownMenu" class="theme-dropdown-menu theme-dropdown-up hidden">
+                        <div class="theme-dropdown-header">🎨 Escolha um Tema</div>
+                        <div id="themeDropdownList" class="theme-dropdown-list"></div>
+                    </div>
                 </div>
             </div>
         </footer>

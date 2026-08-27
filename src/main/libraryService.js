@@ -41,6 +41,7 @@ export async function getLibraryVideosAsync(outputDir) {
                         name: entry.name,
                         path: fullPath,
                         date: stat.birthtime,
+                        size: stat.size,
                         metadata: metadata
                     });
                 } catch (e) { /* ignore stat failure */ }

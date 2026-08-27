@@ -10,10 +10,11 @@ export class AudioVisualizer {
         this.container = document.getElementById(containerId);
         this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
         
-        // Modos disponíveis: 'spectrum', 'wave', 'led', 'helix', 'liquid', 'aurora', 'plasma', 'prism'
+        // Modos disponíveis: 'spectrum', 'wave', 'led', 'helix', 'electric', 'aurora', 'plasma', 'prism'
         const savedMode = localStorage.getItem('meet_record_visualizer_mode');
         const invalidModes = ['particles', 'orbit', 'cyber', 'tunnel', 'radial'];
-        this.mode = invalidModes.includes(savedMode) ? 'helix' : (savedMode || 'spectrum');
+        const migratedMode = savedMode === 'liquid' ? 'electric' : savedMode;
+        this.mode = invalidModes.includes(migratedMode) ? 'helix' : (migratedMode || 'spectrum');
         
         // Estado de física dos picos para o modo espectro
         this.peaks = [];
@@ -22,7 +23,8 @@ export class AudioVisualizer {
 
         // Fases de animação para os modos dinâmicos
         this.helixPhase = 0;
-        this.liquidPhase = 0;
+        this.electricPhase = 0;
+        this.electricSparks = [];
         this.auroraPhase = 0;
         this.plasmaPhase = 0;
         this.idlePhase = 0;
@@ -43,9 +45,9 @@ export class AudioVisualizer {
     }
 
     setMode(newMode) {
-        if (['spectrum', 'wave', 'led', 'helix', 'liquid', 'aurora', 'plasma', 'prism'].includes(newMode)) {
-            this.mode = newMode;
-            localStorage.setItem('meet_record_visualizer_mode', newMode);
+        if (['spectrum', 'wave', 'led', 'helix', 'electric', 'liquid', 'aurora', 'plasma', 'prism'].includes(newMode)) {
+            this.mode = newMode === 'liquid' ? 'electric' : newMode;
+            localStorage.setItem('meet_record_visualizer_mode', this.mode);
             this.peaks = [];
             this.peakHold = [];
         }
@@ -117,8 +119,9 @@ export class AudioVisualizer {
             case 'helix':
                 this.drawHelix(dataArray, w, h);
                 break;
+            case 'electric':
             case 'liquid':
-                this.drawLiquid(dataArray, w, h);
+                this.drawElectric(dataArray, w, h);
                 break;
             case 'aurora':
                 this.drawAurora(dataArray, w, h);
@@ -590,96 +593,271 @@ export class AudioVisualizer {
     }
 
     /**
-     * MODO 6: Ondas Líquidas Multicamadas (Liquid Waves)
+     * MODO 6: Descarga Elétrica e Raios Tesla (Electric Lightning Arc)
      */
-    drawLiquid(dataArray, w, h) {
+    drawElectric(dataArray, w, h) {
         const ctx = this.ctx;
-        this.liquidPhase += 0.035;
-        const centerY = h * 0.65;
+        if (!this.electricSparks) this.electricSparks = [];
+        this.electricPhase = (this.electricPhase || 0) + 0.14;
 
-        // Bandas de áudio para cada onda
-        const bassVal = (dataArray[0] + dataArray[1] + dataArray[2] + dataArray[3]) / (4 * 255);
-        const midVal = (dataArray[8] + dataArray[12] + dataArray[16]) / (3 * 255);
-        const trebleVal = (dataArray[20] + dataArray[24] + dataArray[28]) / (3 * 255);
+        const centerY = h * 0.5;
+        const startX = 16;
+        const endX = w - 16;
+        const spanX = Math.max(10, endX - startX);
 
-        const waves = [
-            {
-                phase: this.liquidPhase,
-                speed: 0.02,
-                freq: 0.015,
-                amp: 10 + bassVal * (h * 0.45),
-                color: 'rgba(56, 189, 248, 0.35)',
-                stroke: '#38bdf8'
-            },
-            {
-                phase: this.liquidPhase * 1.3 + 1.2,
-                speed: 0.03,
-                freq: 0.022,
-                amp: 8 + midVal * (h * 0.4),
-                color: 'rgba(168, 85, 247, 0.35)',
-                stroke: '#a855f7'
-            },
-            {
-                phase: this.liquidPhase * 0.8 + 2.4,
-                speed: 0.025,
-                freq: 0.03,
-                amp: 6 + trebleVal * (h * 0.35),
-                color: 'rgba(244, 63, 94, 0.3)',
-                stroke: '#f43f5e'
-            }
-        ];
+        // Análise de frequências de áudio
+        const bassSum = (dataArray[0] + dataArray[1] + dataArray[2] + dataArray[3]) / (4 * 255);
+        const midSum = (dataArray[8] + dataArray[12] + dataArray[16]) / (3 * 255);
+        const trebleSum = (dataArray[24] + dataArray[28] + dataArray[32]) / (3 * 255);
+        const totalEnergy = Math.min(1, bassSum * 0.45 + midSum * 0.35 + trebleSum * 0.2);
+
+        this.electricPhase += totalEnergy * 0.12;
 
         ctx.save();
-        ctx.globalCompositeOperation = 'screen';
 
-        waves.forEach(wave => {
+        // 1. Campo de Indução Eletrostática Ambiente (Aura de Plasma e Flash Sutil)
+        if (totalEnergy > 0.04) {
+            const glowGrad = ctx.createRadialGradient(w * 0.5, centerY, 4, w * 0.5, centerY, w * 0.55);
+            glowGrad.addColorStop(0, `rgba(56, 189, 248, ${0.08 + totalEnergy * 0.22})`);
+            glowGrad.addColorStop(0.5, `rgba(168, 85, 247, ${0.04 + totalEnergy * 0.14})`);
+            glowGrad.addColorStop(1, 'rgba(15, 23, 42, 0)');
+            ctx.fillStyle = glowGrad;
+            ctx.fillRect(0, 0, w, h);
+
+            // Flash estroboscópico sutil em picos fortes de grave
+            if (bassSum > 0.62) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${(bassSum - 0.62) * 0.2})`;
+                ctx.fillRect(0, 0, w, h);
+            }
+        }
+
+        // 2. Terminais / Eletrodos Tesla Emissores (Esquerda e Direita)
+        [startX, endX].forEach((nodeX, idx) => {
+            const isLeft = idx === 0;
+            const nodeRadius = 3 + totalEnergy * 2.5;
+
+            // Corona exterior difusa
+            const corona = ctx.createRadialGradient(nodeX, centerY, 1, nodeX, centerY, 12 + totalEnergy * 8);
+            corona.addColorStop(0, '#ffffff');
+            corona.addColorStop(0.35, isLeft ? 'rgba(56, 189, 248, 0.85)' : 'rgba(192, 132, 252, 0.85)');
+            corona.addColorStop(1, 'rgba(56, 189, 248, 0)');
+            ctx.fillStyle = corona;
             ctx.beginPath();
-            ctx.moveTo(0, h);
-
-            const segments = 24;
-            const step = w / segments;
-            const pts = [];
-
-            for (let i = 0; i <= segments; i++) {
-                const x = i * step;
-                const dataIdx = Math.floor((i / segments) * (dataArray.length * 0.5));
-                const audioSample = (dataArray[dataIdx] || 0) / 255;
-                const dynamicAmp = wave.amp * (0.4 + audioSample * 0.6);
-                const y = centerY - Math.sin(wave.phase + x * wave.freq) * dynamicAmp;
-                pts.push({ x, y });
-            }
-
-            ctx.lineTo(pts[0].x, pts[0].y);
-            for (let i = 0; i < pts.length - 1; i++) {
-                const xc = (pts[i].x + pts[i + 1].x) / 2;
-                const yc = (pts[i].y + pts[i + 1].y) / 2;
-                ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
-            }
-            ctx.lineTo(w, pts[pts.length - 1].y);
-            ctx.lineTo(w, h);
-            ctx.closePath();
-
-            const grad = ctx.createLinearGradient(0, centerY - wave.amp, 0, h);
-            grad.addColorStop(0, wave.color);
-            grad.addColorStop(1, 'rgba(15, 23, 42, 0.05)');
-            ctx.fillStyle = grad;
+            ctx.arc(nodeX, centerY, 12 + totalEnergy * 8, 0, Math.PI * 2);
             ctx.fill();
 
+            // Anel pulsante
             ctx.beginPath();
-            ctx.moveTo(pts[0].x, pts[0].y);
-            for (let i = 0; i < pts.length - 1; i++) {
-                const xc = (pts[i].x + pts[i + 1].x) / 2;
-                const yc = (pts[i].y + pts[i + 1].y) / 2;
-                ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
-            }
-            ctx.strokeStyle = wave.stroke;
-            ctx.lineWidth = 1.5;
-            ctx.shadowColor = wave.stroke;
-            ctx.shadowBlur = 6;
+            ctx.arc(nodeX, centerY, nodeRadius + 3, 0, Math.PI * 2);
+            ctx.strokeStyle = isLeft ? 'rgba(56, 189, 248, 0.6)' : 'rgba(192, 132, 252, 0.6)';
+            ctx.lineWidth = 1;
             ctx.stroke();
+
+            // Núcleo incandescente do eletrodo
+            ctx.beginPath();
+            ctx.arc(nodeX, centerY, nodeRadius, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = isLeft ? '#38bdf8' : '#c084fc';
+            ctx.shadowBlur = 8;
+            ctx.fill();
             ctx.shadowBlur = 0;
         });
 
+        // 3. Gerar Vértices do Raio Principal (Main Lightning Bolt)
+        const segments = 34;
+        const step = spanX / segments;
+        const mainBolt = [];
+
+        for (let i = 0; i <= segments; i++) {
+            const ratio = i / segments;
+            const x = startX + i * step;
+
+            // Envelope parabólico para ancorar firmemente as pontas nos eletrodos
+            const envelope = Math.sin(ratio * Math.PI);
+
+            // Mapear espectro de áudio ao longo do comprimento
+            const dataIdx = Math.floor(ratio * (dataArray.length * 0.65));
+            const audioVal = (dataArray[dataIdx] || 0) / 255;
+
+            // Ondulação senoidal combinada com ruído estático de alta voltagem
+            const waveJitter = Math.sin(this.electricPhase * 3.2 + i * 0.6) * (3 + audioVal * (h * 0.22));
+            const noiseJitter = (Math.random() - 0.5) * (4 + audioVal * (h * 0.44) + bassSum * 12);
+            const rawY = centerY + (waveJitter + noiseJitter) * envelope;
+            const y = Math.max(6, Math.min(h - 6, rawY));
+
+            mainBolt.push({ x, y, audioVal, ratio });
+        }
+
+        // 4. Gerar Vértices do Arco Secundário (Secondary Violet Arc)
+        const subSegments = 24;
+        const subStep = spanX / subSegments;
+        const subBolt = [];
+
+        for (let i = 0; i <= subSegments; i++) {
+            const ratio = i / subSegments;
+            const x = startX + i * subStep;
+            const envelope = Math.sin(ratio * Math.PI);
+
+            const dataIdx = Math.floor((1 - ratio) * (dataArray.length * 0.55));
+            const audioVal = (dataArray[dataIdx] || 0) / 255;
+
+            const waveJitter = -Math.sin(this.electricPhase * 2.6 + i * 0.7) * (2 + audioVal * (h * 0.18));
+            const noiseJitter = (Math.random() - 0.5) * (3 + audioVal * (h * 0.32) + midSum * 10);
+            const rawY = centerY + (waveJitter + noiseJitter) * envelope;
+            const y = Math.max(6, Math.min(h - 6, rawY));
+
+            subBolt.push({ x, y, audioVal });
+        }
+
+        ctx.globalCompositeOperation = 'screen';
+
+        // 5. Renderizar Arco Secundário (Violeta/Magenta)
+        if (subBolt.length > 1) {
+            // Brilho violeta externo
+            ctx.beginPath();
+            ctx.moveTo(subBolt[0].x, subBolt[0].y);
+            for (let i = 1; i < subBolt.length; i++) {
+                ctx.lineTo(subBolt[i].x, subBolt[i].y);
+            }
+            ctx.strokeStyle = 'rgba(168, 85, 247, 0.45)';
+            ctx.lineWidth = 3 + totalEnergy * 2;
+            ctx.shadowColor = '#a855f7';
+            ctx.shadowBlur = 10;
+            ctx.stroke();
+
+            // Filamento interno violeta neon
+            ctx.beginPath();
+            ctx.moveTo(subBolt[0].x, subBolt[0].y);
+            for (let i = 1; i < subBolt.length; i++) {
+                ctx.lineTo(subBolt[i].x, subBolt[i].y);
+            }
+            ctx.strokeStyle = '#e879f9';
+            ctx.lineWidth = 1.2;
+            ctx.shadowColor = '#f472b6';
+            ctx.shadowBlur = 4;
+            ctx.stroke();
+        }
+
+        // 6. Renderizar Raio Principal em 3 Camadas (High Dynamic Plasma)
+        if (mainBolt.length > 1) {
+            // Camada 1: Aura difusa de arco voltaico
+            ctx.beginPath();
+            ctx.moveTo(mainBolt[0].x, mainBolt[0].y);
+            for (let i = 1; i < mainBolt.length; i++) {
+                ctx.lineTo(mainBolt[i].x, mainBolt[i].y);
+            }
+            ctx.strokeStyle = 'rgba(14, 165, 233, 0.35)';
+            ctx.lineWidth = 7 + totalEnergy * 5;
+            ctx.shadowColor = '#00f0ff';
+            ctx.shadowBlur = 16;
+            ctx.stroke();
+
+            // Camada 2: Tronco principal de alta voltagem ciano
+            ctx.beginPath();
+            ctx.moveTo(mainBolt[0].x, mainBolt[0].y);
+            for (let i = 1; i < mainBolt.length; i++) {
+                ctx.lineTo(mainBolt[i].x, mainBolt[i].y);
+            }
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2.6 + totalEnergy * 1.8;
+            ctx.shadowColor = '#38bdf8';
+            ctx.shadowBlur = 8;
+            ctx.stroke();
+
+            // Camada 3: Núcleo branco superquente (Brilliant Hot White Core)
+            ctx.beginPath();
+            ctx.moveTo(mainBolt[0].x, mainBolt[0].y);
+            for (let i = 1; i < mainBolt.length; i++) {
+                ctx.lineTo(mainBolt[i].x, mainBolt[i].y);
+            }
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.2 + totalEnergy * 0.6;
+            ctx.shadowColor = '#ffffff';
+            ctx.shadowBlur = 4;
+            ctx.stroke();
+        }
+
+        // 7. Ramificações Eletrizantes (Lightning Forks / Branches)
+        if (totalEnergy > 0.12) {
+            const numBranches = Math.min(4, Math.floor(1 + totalEnergy * 3));
+            for (let b = 0; b < numBranches; b++) {
+                const targetIdx = 4 + Math.floor((b + 0.5) * ((segments - 8) / numBranches));
+                const origin = mainBolt[targetIdx];
+                if (!origin || origin.audioVal < 0.15) continue;
+
+                const dir = (b % 2 === 0 ? -1 : 1);
+                const branchLen = (12 + origin.audioVal * (h * 0.35)) * dir;
+
+                ctx.beginPath();
+                ctx.moveTo(origin.x, origin.y);
+
+                const midX = origin.x + (Math.random() - 0.5) * 16;
+                const midY = origin.y + branchLen * 0.55 + (Math.random() - 0.5) * 6;
+                const endBranchX = midX + (Math.random() - 0.5) * 20;
+                const endBranchY = origin.y + branchLen;
+
+                ctx.lineTo(midX, midY);
+                ctx.lineTo(endBranchX, endBranchY);
+
+                ctx.strokeStyle = 'rgba(186, 230, 253, 0.85)';
+                ctx.lineWidth = 1.2;
+                ctx.shadowColor = '#38bdf8';
+                ctx.shadowBlur = 6;
+                ctx.stroke();
+
+                // Centelha na ponta da ramificação
+                ctx.beginPath();
+                ctx.arc(endBranchX, endBranchY, 1.5, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+            }
+        }
+
+        // 8. Partículas de Centelha Iônica (Electric Sparks)
+        if (totalEnergy > 0.08 && this.electricSparks.length < 32) {
+            const spawnCount = Math.min(3, Math.floor(1 + totalEnergy * 3));
+            for (let s = 0; s < spawnCount; s++) {
+                const randPt = mainBolt[Math.floor(Math.random() * mainBolt.length)];
+                if (randPt) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = 1.5 + Math.random() * (3 + totalEnergy * 5);
+                    this.electricSparks.push({
+                        x: randPt.x,
+                        y: randPt.y,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        life: 1.0,
+                        decay: 0.035 + Math.random() * 0.05,
+                        size: 1 + Math.random() * 1.6,
+                        color: Math.random() > 0.3 ? '#38bdf8' : '#e879f9'
+                    });
+                }
+            }
+        }
+
+        // Atualizar e renderizar centelhas
+        for (let i = this.electricSparks.length - 1; i >= 0; i--) {
+            const spark = this.electricSparks[i];
+            spark.x += spark.vx;
+            spark.y += spark.vy;
+            spark.vx *= 0.94;
+            spark.vy *= 0.94;
+            spark.life -= spark.decay;
+
+            if (spark.life <= 0 || spark.x < 0 || spark.x > w || spark.y < 0 || spark.y > h) {
+                this.electricSparks.splice(i, 1);
+                continue;
+            }
+
+            ctx.beginPath();
+            ctx.arc(spark.x, spark.y, spark.size * spark.life, 0, Math.PI * 2);
+            ctx.fillStyle = spark.color;
+            ctx.shadowColor = spark.color;
+            ctx.shadowBlur = 6;
+            ctx.fill();
+        }
+
+        ctx.shadowBlur = 0;
         ctx.restore();
     }
 
@@ -847,6 +1025,7 @@ export class AudioVisualizer {
         this.ctx.clearRect(0, 0, this.width, this.height);
         this.peaks = [];
         this.peakHold = [];
+        this.electricSparks = [];
         this.updateAmbientGlow(0);
         if (this.onVuUpdate) this.onVuUpdate(0, -60);
     }
