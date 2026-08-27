@@ -42,7 +42,7 @@ meet-record/
 │       ├── 📄 audioVisualizer.js    # Engine de equalizador High-DPI (Espectro, Ondas, LED, Hélice, Elétrico, Aurora, Plasma, Prisma)
 │       ├── 📄 videoCompositor.js    # Engine de efeitos em tempo real (Spotlight Halo, Click Ripples, Privacy Shield)
 │       ├── 📄 libraryManager.js     # Renderização, filtragem e ordenação da biblioteca de reuniões
-│       ├── 📄 themeManager.js       # Gerenciamento de 5 temas visuais e Iluminação Reativa Ambiente (Ambient Voice Glow)
+│       ├── 📄 themeManager.js       # Gerenciamento de 10 temas visuais e Iluminação Reativa Ambiente (Ambient Voice Glow)
 │       └── 📄 tagEditor.js          # Modal e editor de tags/categorias para reuniões salvas
 ```
 

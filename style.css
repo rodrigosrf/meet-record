@@ -78,6 +78,86 @@
     --glow-color: #0284c7;
 }
 
+[data-theme="crimson"] {
+    --bg-color: #0c0507;
+    --bg-radial-1: rgba(239, 68, 68, 0.24);
+    --bg-radial-2: rgba(225, 29, 72, 0.20);
+    --card-bg: rgba(26, 12, 18, 0.70);
+    --accent-color: #ff2a55;
+    --accent-glow: rgba(255, 42, 85, 0.45);
+    --text-primary: #fff1f2;
+    --text-secondary: #fda4af;
+    --danger: #ff0037;
+    --success: #10b981;
+    --glass-border: rgba(255, 42, 85, 0.22);
+    --glass-highlight: rgba(255, 42, 85, 0.08);
+    --glow-color: #ff2a55;
+}
+
+[data-theme="sakura"] {
+    --bg-color: #0d0e22;
+    --bg-radial-1: rgba(244, 114, 182, 0.26);
+    --bg-radial-2: rgba(168, 85, 247, 0.22);
+    --card-bg: rgba(24, 20, 50, 0.65);
+    --accent-color: #f472b6;
+    --accent-glow: rgba(244, 114, 182, 0.45);
+    --text-primary: #fdf2f8;
+    --text-secondary: #d8b4fe;
+    --danger: #f43f5e;
+    --success: #34d399;
+    --glass-border: rgba(244, 114, 182, 0.24);
+    --glass-highlight: rgba(168, 85, 247, 0.12);
+    --glow-color: #f472b6;
+}
+
+[data-theme="amber"] {
+    --bg-color: #0b0906;
+    --bg-radial-1: rgba(245, 158, 11, 0.24);
+    --bg-radial-2: rgba(217, 119, 6, 0.20);
+    --card-bg: rgba(28, 22, 14, 0.70);
+    --accent-color: #fbbf24;
+    --accent-glow: rgba(251, 191, 36, 0.42);
+    --text-primary: #fffbeb;
+    --text-secondary: #fde68a;
+    --danger: #ef4444;
+    --success: #22c55e;
+    --glass-border: rgba(251, 191, 36, 0.24);
+    --glass-highlight: rgba(245, 158, 11, 0.08);
+    --glow-color: #fbbf24;
+}
+
+[data-theme="frost"] {
+    --bg-color: #041019;
+    --bg-radial-1: rgba(6, 182, 212, 0.25);
+    --bg-radial-2: rgba(56, 189, 248, 0.22);
+    --card-bg: rgba(9, 28, 44, 0.65);
+    --accent-color: #22d3ee;
+    --accent-glow: rgba(34, 211, 238, 0.45);
+    --text-primary: #f0fdfa;
+    --text-secondary: #99f6e4;
+    --danger: #f87171;
+    --success: #2dd4bf;
+    --glass-border: rgba(34, 211, 238, 0.24);
+    --glass-highlight: rgba(255, 255, 255, 0.10);
+    --glow-color: #22d3ee;
+}
+
+[data-theme="sunset"] {
+    --bg-color: #130a1a;
+    --bg-radial-1: rgba(249, 115, 22, 0.26);
+    --bg-radial-2: rgba(236, 72, 153, 0.20);
+    --card-bg: rgba(34, 15, 38, 0.65);
+    --accent-color: #ff6b35;
+    --accent-glow: rgba(255, 107, 53, 0.48);
+    --text-primary: #fff7ed;
+    --text-secondary: #fdba74;
+    --danger: #ef4444;
+    --success: #10b981;
+    --glass-border: rgba(255, 107, 53, 0.24);
+    --glass-highlight: rgba(249, 115, 22, 0.08);
+    --glow-color: #ff6b35;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -2663,10 +2743,10 @@ code {
     position: absolute;
     top: calc(100% + 8px);
     right: 0;
-    width: 280px;
+    width: 300px;
     background: var(--card-bg);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--glass-border);
     border-radius: 16px;
     padding: 10px;
@@ -2707,6 +2787,26 @@ code {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    max-height: 380px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.theme-dropdown-list::-webkit-scrollbar {
+    width: 5px;
+}
+
+.theme-dropdown-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.theme-dropdown-list::-webkit-scrollbar-thumb {
+    background: var(--glass-border);
+    border-radius: 10px;
+}
+
+.theme-dropdown-list::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-color);
 }
 
 .theme-option-item {
@@ -2722,20 +2822,45 @@ code {
 
 .theme-option-item:hover {
     background: rgba(255, 255, 255, 0.08);
+    transform: translateX(2px);
 }
 
 .theme-option-item.active {
-    background: rgba(56, 189, 248, 0.15);
+    background: rgba(255, 255, 255, 0.06);
     border-color: var(--accent-color);
+    box-shadow: 0 0 10px var(--accent-glow);
 }
 
 .theme-option-item .theme-icon {
     font-size: 1.2rem;
+    flex-shrink: 0;
 }
 
 .theme-option-item .theme-info {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+
+.theme-name-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.theme-color-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+}
+
+.theme-option-item:hover .theme-color-dot {
+    transform: scale(1.25);
 }
 
 .theme-option-item .theme-name {
@@ -2748,6 +2873,7 @@ code {
     font-size: 0.675rem;
     color: var(--text-secondary);
     line-height: 1.2;
+    margin-top: 2px;
 }
 
 

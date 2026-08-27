@@ -4,11 +4,16 @@
  */
 
 export const THEMES = [
-    { id: 'space', name: 'Deep Space Glass', icon: '🌌', desc: 'Glassmorphism translúcido com tons azulados cósmicos' },
-    { id: 'cyberpunk', name: 'Cyberpunk Neon', icon: '⚡', desc: 'Ciano elétrico, magenta e grade holográfica de alto impacto' },
-    { id: 'oled', name: 'Midnight OLED', icon: '🖤', desc: 'Preto puro absoluto com acentos em verde esmeralda neon' },
-    { id: 'synthwave', name: 'Synthwave 80s', icon: '🌆', desc: 'Gradientes violeta, pôr do sol laranja e estética retrô' },
-    { id: 'light', name: 'Solar Glass', icon: '☀️', desc: 'Interface clara moderna, luminosa e minimalista' }
+    { id: 'space', name: 'Deep Space Glass', icon: '🌌', accent: '#38bdf8', desc: 'Glassmorphism translúcido com tons azulados cósmicos' },
+    { id: 'cyberpunk', name: 'Cyberpunk Neon', icon: '⚡', accent: '#06b6d4', desc: 'Ciano elétrico, magenta e grade holográfica de alto impacto' },
+    { id: 'oled', name: 'Midnight OLED', icon: '🖤', accent: '#10b981', desc: 'Preto puro absoluto com acentos em verde esmeralda neon' },
+    { id: 'synthwave', name: 'Synthwave 80s', icon: '🌆', accent: '#f43f5e', desc: 'Gradientes violeta, pôr do sol laranja e estética retrô' },
+    { id: 'light', name: 'Solar Glass', icon: '☀️', accent: '#0284c7', desc: 'Interface clara moderna, luminosa e minimalista' },
+    { id: 'crimson', name: 'Crimson Eclipse', icon: '🩸', accent: '#ff2a55', desc: 'Obsidiana profunda com brilho rubi carmim de alto contraste' },
+    { id: 'sakura', name: 'Tokyo Sakura', icon: '🌸', accent: '#f472b6', desc: 'Noite índigo com flor de cerejeira pastel e néon lavanda' },
+    { id: 'amber', name: 'Golden Amber', icon: '⚜️', accent: '#fbbf24', desc: 'Preto ônix com ouro líquido, âmbar luxuoso e bronze refinado' },
+    { id: 'frost', name: 'Glacial Frost', icon: '❄️', accent: '#22d3ee', desc: 'Abismo ártico com ciano cristalino e efeitos translúcidos' },
+    { id: 'sunset', name: 'Sunset Horizon', icon: '🌅', accent: '#ff6b35', desc: 'Crepúsculo californiano com degradê coral, tangerina e roxo' }
 ];
 
 class ThemeManager {
@@ -61,7 +66,10 @@ class ThemeManager {
             <div class="theme-option-item ${theme.id === this.currentTheme ? 'active' : ''}" data-theme-id="${theme.id}">
                 <span class="theme-icon">${theme.icon}</span>
                 <div class="theme-info">
-                    <span class="theme-name">${theme.name}</span>
+                    <div class="theme-name-row">
+                        <span class="theme-name">${theme.name}</span>
+                        <span class="theme-color-dot" style="background:${theme.accent}; box-shadow: 0 0 7px ${theme.accent};"></span>
+                    </div>
                     <span class="theme-desc">${theme.desc}</span>
                 </div>
             </div>
