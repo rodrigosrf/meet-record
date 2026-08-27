@@ -100,9 +100,14 @@ export async function renderLibraryUI(callbacks = {}, skipFetch = false) {
             item.className = 'library-item';
             item.setAttribute('data-rec-path', rec.path);
             
-            const dateStr = new Date(rec.date).toLocaleString('pt-BR', {
-                hour: '2-digit', minute: '2-digit'
-            });
+            const recDate = rec.metadata?.date ? new Date(rec.metadata.date) : (rec.date ? new Date(rec.date) : new Date());
+            const isValidDate = !isNaN(recDate.getTime());
+            const dateFormatted = isValidDate
+                ? recDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                : '';
+            const timeFormatted = isValidDate
+                ? recDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                : '';
 
             const order = groups[dateLabel].length - index;
 
@@ -163,11 +168,33 @@ export async function renderLibraryUI(callbacks = {}, skipFetch = false) {
                 <div class="lib-item-info">
                     <h4 title="${rec.name}">${rec.name}</h4>
                     <div class="lib-item-meta-row">
-                        <span class="lib-item-time">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                            ${dateStr}
-                        </span>
-                        ${durationStr ? `<span class="lib-item-duration" title="Duração">${durationStr}</span>` : ''}
+                        <div class="lib-item-datetime">
+                            ${dateFormatted ? `
+                                <span class="lib-item-date" title="Data da gravação">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                                    <span>${dateFormatted}</span>
+                                </span>
+                            ` : ''}
+                            ${dateFormatted && timeFormatted ? `<span class="lib-item-dot">•</span>` : ''}
+                            ${timeFormatted ? `
+                                <span class="lib-item-time" title="Horário da gravação">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                                    <span>${timeFormatted}</span>
+                                </span>
+                            ` : ''}
+                        </div>
+                        ${durationStr ? `
+                            <span class="lib-item-duration" title="Tempo total da gravação: ${durationStr}">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="13" r="8"></circle>
+                                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                                    <line x1="12" y1="13" x2="15" y2="15"></line>
+                                    <line x1="10" y1="2" x2="14" y2="2"></line>
+                                    <line x1="12" y1="2" x2="12" y2="5"></line>
+                                </svg>
+                                <span>${durationStr}</span>
+                            </span>
+                        ` : ''}
                         ${sizeStr ? `<span class="lib-item-size" title="Tamanho do arquivo">${sizeStr}</span>` : ''}
                     </div>
 

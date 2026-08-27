@@ -1675,20 +1675,73 @@ footer {
     color: var(--text-secondary);
 }
 
+.lib-item-datetime {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.lib-item-date,
 .lib-item-time {
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    letter-spacing: 0.2px;
+}
+
+.lib-item-date svg,
+.lib-item-time svg {
+    opacity: 0.65;
+    flex-shrink: 0;
+    transition: opacity 0.2s ease, color 0.2s ease;
+}
+
+.library-item:hover .lib-item-date svg,
+.library-item:hover .lib-item-time svg {
+    opacity: 0.95;
+    color: var(--accent-color);
+}
+
+.lib-item-dot {
+    opacity: 0.35;
+    font-size: 0.65rem;
+    line-height: 1;
+    user-select: none;
 }
 
 .lib-item-duration {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     background: rgba(255, 255, 255, 0.05);
-    padding: 1px 6px;
+    padding: 1px 7px;
     border-radius: 6px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     color: var(--text-primary);
     font-weight: 600;
     font-size: 0.68rem;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+}
+
+.lib-item-duration svg {
+    color: var(--accent-color);
+    opacity: 0.85;
+    flex-shrink: 0;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.library-item:hover .lib-item-duration {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+.library-item:hover .lib-item-duration svg {
+    opacity: 1;
+    transform: scale(1.08);
 }
 
 .lib-item-size {
