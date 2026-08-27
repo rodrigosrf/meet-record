@@ -5,6 +5,7 @@ import { exec, spawn } from 'child_process';
 import fs from 'fs';
 import Store from 'electron-store';
 import { convertToMp3AndSave } from './src/main/ffmpegService.js';
+import { generateOrUpdateMarkdownSidecar } from './src/main/markdownService.js';
 import { 
     getLibraryVideosAsync, 
     getRecordingThumbnailAsync, 
@@ -510,15 +511,17 @@ ipcMain.handle('update-recording-tags', async (event, { filePath, tags, favorite
         const baseName = path.parse(filePath).name;
         const dir = path.dirname(filePath);
         const metadataPath = path.join(dir, baseName + '.json');
+        const mdPath = path.join(dir, baseName + '.md');
+        let metadata;
 
         if (fs.existsSync(metadataPath)) {
-            const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+            metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
             if (tags !== undefined) metadata.tags = tags;
             if (favorite !== undefined) metadata.favorite = favorite;
             fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
         } else {
             // Create new metadata file
-            const metadata = {
+            metadata = {
                 title: baseName,
                 date: new Date().toISOString(),
                 tags: tags || [],
@@ -526,6 +529,10 @@ ipcMain.handle('update-recording-tags', async (event, { filePath, tags, favorite
             };
             fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
         }
+
+        // Sincronizar tags no arquivo Markdown (.md) relacionado ao vídeo
+        await generateOrUpdateMarkdownSidecar(mdPath, metadata);
+
         return { success: true };
     } catch (e) {
         return { success: false, error: e.message };

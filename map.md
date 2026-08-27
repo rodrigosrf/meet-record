@@ -35,7 +35,8 @@ meet-record/
 ├── 📂 src/
 │   ├── 📂 main/
 │   │   ├── 📄 ffmpegService.js  # Conversão de áudio para MP3, extração, geração de waveform banner via FFmpeg
-│   │   └── 📄 libraryService.js # Gestão de arquivos de gravação no disco, thumbs, exclusão e arquivamento
+│   │   ├── 📄 libraryService.js # Gestão de arquivos de gravação no disco, thumbs, exclusão e arquivamento
+│   │   └── 📄 markdownService.js# Gestão, criação e sincronização incremental de notas e tags em arquivos Markdown (.md)
 │   └── 📂 renderer/
 │       ├── 📄 audioDeviceManager.js # Enumeração e gerenciamento de dispositivos de entrada/saída de áudio
 │       ├── 📄 audioPlayer.js        # Controller de reprodução de gravações na interface
@@ -83,7 +84,7 @@ Para evitar busca no código, aqui estão os principais canais expostos em `wind
 | `show-overlay` / `hide-overlay` | `send` | Renderer -> Main | Exibe ou oculta o widget de overlay |
 | `overlay-update` / `sync-overlay` | `on`/`send` | Bidirecional | Sincroniza estado de gravação, timer, volume e título entre Main e Overlay |
 | `get-organization-config` / `update-organization-config` | `invoke` | Renderer -> Main | Gerencia templates de organização de arquivos |
-| `update-recording-tags` / `get-tag-categories` | `invoke` | Renderer -> Main | Gerencia sistema de tags de reuniões |
+| `update-recording-tags` / `get-tag-categories` | `invoke` | Renderer -> Main | Gerencia sistema de tags de reuniões e sincroniza tags no arquivo .md correspondente |
 
 ---
 
@@ -124,7 +125,7 @@ Ao modificar uma funcionalidade específica, consulte este guia antes de ler os 
 *   **Alterar detecção de reuniões (novos apps ou navegadores)**:
     👉 Editar [detectMeetings.ps1](file:///d:/Dev/meet-record/detectMeetings.ps1) (função `Get-ActiveMeetings`) e parsing em [main.js](file:///d:/Dev/meet-record/main.js).
 *   **Ajustar conversão de áudio, geração de .md ou execução do FFmpeg**:
-    👉 Editar [src/main/ffmpegService.js](file:///d:/Dev/meet-record/src/main/ffmpegService.js) (Nota: arquivos `.md` sidecar só são gerados se houver comentários registrados).
+    👉 Editar [src/main/ffmpegService.js](file:///d:/Dev/meet-record/src/main/ffmpegService.js) e [src/main/markdownService.js](file:///d:/Dev/meet-record/src/main/markdownService.js) (arquivos `.md` sidecar sincronizam tags e notas da reunião).
 *   **Modificar a lista de gravações, biblioteca, capas/thumbnails**:
     👉 Editar [src/main/libraryService.js](file:///d:/Dev/meet-record/src/main/libraryService.js) e [src/renderer/libraryManager.js](file:///d:/Dev/meet-record/src/renderer/libraryManager.js) (capas automáticas são capturadas após 1 min com foco na janela do Teams).
 *   **Ajustar a captura de áudio/vídeo WebRTC, visualizador contínuo ou detecção de silêncio**:

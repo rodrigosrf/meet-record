@@ -2,6 +2,7 @@ import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import ffmpegStatic from 'ffmpeg-static';
+import { generateOrUpdateMarkdownSidecar } from './markdownService.js';
 
 function getFfmpegPath() {
     let binaryPath = ffmpegStatic;
@@ -87,37 +88,9 @@ export async function convertToMp3AndSave({ tempWebmPath, finalMp3Path, finalWeb
                     const metadataPath = finalMp3Path.replace(/\.mp3$/, '.json');
                     await fs.promises.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
 
-                    // Generate Markdown Sidecar for NotebookLM (Only if note/comment exists)
-                    if (metadata.note && metadata.note.trim()) {
-                        try {
-                            const mdPath = finalMp3Path.replace(/\.mp3$/, '.md');
-                            const date = new Date(metadata.date);
-                            const formattedDate = date.toLocaleString('pt-BR', { 
-                                day: '2-digit', month: '2-digit', year: 'numeric',
-                                hour: '2-digit', minute: '2-digit'
-                            });
-                            
-                            const durationSeconds = Math.floor((metadata.duration || 0) / 1000);
-                            const h = Math.floor(durationSeconds / 3600);
-                            const m = Math.floor((durationSeconds % 3600) / 60);
-                            const s = durationSeconds % 60;
-                            const formattedDuration = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-
-                            const mdContent = `# ${metadata.title || 'Sem Título'}
-
-**Data:** ${formattedDate}
-**Duração:** ${formattedDuration}
-
----
-
-## Notas da Reunião
-${metadata.note.trim()}
-`;
-                            await fs.promises.writeFile(mdPath, mdContent, 'utf8');
-                        } catch (mdError) {
-                            console.error('Error generating Markdown sidecar:', mdError);
-                        }
-                    }
+                    // Generate Markdown Sidecar for NotebookLM & Tags
+                    const mdPath = finalMp3Path.replace(/\.mp3$/, '.md');
+                    await generateOrUpdateMarkdownSidecar(mdPath, metadata);
                 }
 
                 resolve({ success: true, path: hasVideo ? finalWebmPath : finalMp3Path });

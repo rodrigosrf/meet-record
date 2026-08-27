@@ -176,6 +176,25 @@ body {
     transition: background 0.3s ease, color 0.3s ease;
 }
 
+/* Custom Scrollbar Global */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
 .container {
     display: flex;
     flex-direction: column;
@@ -630,6 +649,175 @@ input:checked + .slider:before {
 .notes-container textarea:focus {
     border-color: var(--accent-color);
     background: rgba(255, 255, 255, 0.08);
+}
+
+.active-rec-tags-section {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.active-rec-tags-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 28px;
+}
+
+.active-rec-tags-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    flex: 1;
+}
+
+.btn-toggle-active-tags {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 4px 10px;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+    user-select: none;
+    margin-left: auto;
+}
+
+.btn-toggle-active-tags:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    border-color: var(--accent-color);
+}
+
+.btn-toggle-active-tags.active {
+    background: rgba(56, 189, 248, 0.12);
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
+.btn-toggle-active-tags .chevron-icon {
+    transition: transform 0.25s ease;
+}
+
+.btn-toggle-active-tags.active .chevron-icon {
+    transform: rotate(180deg);
+}
+
+/* Painel Gaveta Colapsável */
+.active-rec-tags-drawer {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.45);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 10px;
+    animation: drawerSlideDown 0.22s ease-out;
+    backdrop-filter: blur(8px);
+}
+
+@keyframes drawerSlideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.active-rec-tags-input-row {
+    display: flex;
+    gap: 6px;
+}
+
+.active-rec-tag-input {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    padding: 6px 12px;
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+.active-rec-tag-input:focus {
+    border-color: var(--accent-color);
+    background: rgba(255, 255, 255, 0.09);
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.1);
+}
+
+.btn-active-tag-add {
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid var(--accent-color);
+    color: var(--accent-color);
+    border-radius: 8px;
+    padding: 0 12px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.btn-active-tag-add:hover {
+    background: var(--accent-color);
+    color: #0f172a;
+}
+
+.active-rec-tags-carousel-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.active-rec-tags-carousel-hint {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    opacity: 0.75;
+}
+
+.active-rec-tags-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-height: 120px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 2px 2px 4px 2px;
+}
+
+.active-rec-tags-suggestions::-webkit-scrollbar {
+    width: 4px;
+}
+
+.active-rec-tags-suggestions::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.active-rec-tags-suggestions::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+}
+
+.active-rec-tags-suggestions::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.35);
+}
+
+.active-rec-tags-suggestions .tag-suggestion {
+    white-space: nowrap;
 }
 
 .lib-item-notes {

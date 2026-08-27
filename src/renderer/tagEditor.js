@@ -4,16 +4,6 @@ let tagEditorIsFavorite = false;
 let currentOnSaveSuccess = null;
 let libraryKnownTags = [];
 
-const DEFAULT_PRESET_TAGS = [
-    'Importante',
-    'Alinhamento',
-    '1-on-1',
-    'Sprint',
-    'Cliente',
-    'Apresentação',
-    'Planejamento',
-    'Daily'
-];
 
 const PALETTE = [
     '#38bdf8', '#818cf8', '#a855f7', '#ec4899', '#f43f5e',
@@ -34,10 +24,28 @@ export function getTagColor(tagName, categories = []) {
     return PALETTE[Math.abs(hash) % PALETTE.length];
 }
 
-export function openTagEditorModal(filePath, tags = [], isFavorite = false, options = {}) {
+export async function openTagEditorModal(filePath, tags = [], isFavorite = false, options = {}) {
     const { onSaveSuccess = null, existingTags = [] } = (options || {});
     currentOnSaveSuccess = onSaveSuccess;
-    libraryKnownTags = Array.isArray(existingTags) ? existingTags : [];
+
+    if (Array.isArray(existingTags) && existingTags.length > 0) {
+        libraryKnownTags = existingTags;
+    } else {
+        try {
+            const videos = await window.electronAPI.getLibraryVideos();
+            const tagSet = new Set();
+            (videos || []).forEach(v => {
+                if (v.metadata && Array.isArray(v.metadata.tags)) {
+                    v.metadata.tags.forEach(t => {
+                        if (t && typeof t === 'string') tagSet.add(t.trim());
+                    });
+                }
+            });
+            libraryKnownTags = Array.from(tagSet);
+        } catch (e) {
+            libraryKnownTags = [];
+        }
+    }
 
     tagEditorCurrentPath = filePath;
     tagEditorCurrentTags = [...(tags || [])];
@@ -229,20 +237,7 @@ async function renderTagSuggestions() {
     const categories = await window.electronAPI.getTagCategories();
     const suggestionsMap = new Map();
 
-    // 1. Tags from defined categories in Settings
-    if (Array.isArray(categories)) {
-        for (const cat of categories) {
-            if (Array.isArray(cat.tags)) {
-                for (const tag of cat.tags) {
-                    if (!tagEditorCurrentTags.includes(tag)) {
-                        suggestionsMap.set(tag, { tag, color: cat.color || getTagColor(tag, categories) });
-                    }
-                }
-            }
-        }
-    }
-
-    // 2. Tags already present in other recordings in the library
+    // Sugerir APENAS tags que já foram inseridas anteriormente em outros vídeos
     if (Array.isArray(libraryKnownTags)) {
         for (const tag of libraryKnownTags) {
             if (!tagEditorCurrentTags.includes(tag) && !suggestionsMap.has(tag)) {
@@ -251,23 +246,16 @@ async function renderTagSuggestions() {
         }
     }
 
-    // 3. Default preset tags (smart suggestions)
-    for (const tag of DEFAULT_PRESET_TAGS) {
-        if (!tagEditorCurrentTags.includes(tag) && !suggestionsMap.has(tag)) {
-            suggestionsMap.set(tag, { tag, color: getTagColor(tag, categories) });
-        }
-    }
-
     const suggestions = Array.from(suggestionsMap.values());
 
     if (suggestions.length === 0) {
-        container.innerHTML = '<span class="help-text" style="font-size:0.75rem; opacity:0.7;">Todas as sugestões foram adicionadas!</span>';
+        container.innerHTML = '';
         return;
     }
 
     container.innerHTML = `
         <div class="tag-suggestions-header">
-            <span>💡 Sugestões Rápidas (clique para adicionar):</span>
+            <span>💡 Sugestões de vídeos anteriores (clique para adicionar):</span>
         </div>
         <div class="tag-suggestions-chips">
             ${suggestions.map(s => `

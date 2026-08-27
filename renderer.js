@@ -1,7 +1,7 @@
 import { getAudioInputDevices, createMixedAudioStream } from './src/renderer/audioDeviceManager.js';
 import { openAudioRecording, stopPlaybackAudio, isPlaybackActive, isPlaybackPaused, getPlaybackFrequencyData } from './src/renderer/audioPlayer.js';
 import { initLibraryManager, renderLibraryUI, updateLibraryPlayingState } from './src/renderer/libraryManager.js';
-import { openTagEditorModal } from './src/renderer/tagEditor.js';
+import { openTagEditorModal, getTagColor } from './src/renderer/tagEditor.js';
 import { AudioVisualizer } from './src/renderer/audioVisualizer.js';
 import { VideoCompositor } from './src/renderer/videoCompositor.js';
 import { themeManager } from './src/renderer/themeManager.js';
@@ -35,6 +35,16 @@ const autoRecordCheckbox = document.getElementById('autoRecordCheckbox');
 const titleInput = document.getElementById('titleInput');
 const editTitleBtn = document.getElementById('editTitleBtn');
 const audioDeviceSelect = document.getElementById('audioDeviceSelect');
+
+// Active recording tags elements
+const activeRecTagsList = document.getElementById('activeRecTagsList');
+const activeRecTagInput = document.getElementById('activeRecTagInput');
+const addActiveRecTagBtn = document.getElementById('addActiveRecTagBtn');
+const activeRecTagsSuggestions = document.getElementById('activeRecTagsSuggestions');
+const toggleActiveTagsBtn = document.getElementById('toggleActiveTagsBtn');
+const activeRecTagsDrawer = document.getElementById('activeRecTagsDrawer');
+const toggleActiveTagsLabel = document.getElementById('toggleActiveTagsLabel');
+let activeRecordingTags = [];
 
 // Theme Header UI elements
 const themeDropdownBtn = document.getElementById('themeDropdownBtn');
@@ -166,6 +176,21 @@ async function init() {
     closeLibraryBtn.addEventListener('click', () => libraryPanel.classList.remove('active'));
     openFolderBtn.addEventListener('click', () => window.electronAPI.openOutputDirectory());
     document.getElementById('openLibraryFolderBtn')?.addEventListener('click', () => window.electronAPI.openOutputDirectory());
+
+    if (toggleActiveTagsBtn) {
+        toggleActiveTagsBtn.addEventListener('click', () => toggleActiveTagsDrawer());
+    }
+    if (addActiveRecTagBtn) {
+        addActiveRecTagBtn.addEventListener('click', () => addActiveTagFromInput());
+    }
+    if (activeRecTagInput) {
+        activeRecTagInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ',') {
+                e.preventDefault();
+                addActiveTagFromInput();
+            }
+        });
+    }
 
     window.electronAPI.onMeetingDetected(async (meetings) => {
         const now = Date.now();
@@ -436,6 +461,130 @@ async function handleMeetingDetected(title, handle) {
     }
 }
 
+async function initActiveRecordingTags() {
+    activeRecordingTags = [];
+    if (activeRecTagInput) activeRecTagInput.value = '';
+    closeActiveTagsDrawer();
+    await renderActiveRecTags();
+    await renderActiveRecTagSuggestions();
+}
+
+function toggleActiveTagsDrawer() {
+    if (!activeRecTagsDrawer) return;
+    const isHidden = activeRecTagsDrawer.classList.contains('hidden');
+    if (isHidden) {
+        openActiveTagsDrawer();
+    } else {
+        closeActiveTagsDrawer();
+    }
+}
+
+function openActiveTagsDrawer() {
+    if (!activeRecTagsDrawer) return;
+    activeRecTagsDrawer.classList.remove('hidden');
+    if (toggleActiveTagsBtn) toggleActiveTagsBtn.classList.add('active');
+    if (activeRecTagInput) setTimeout(() => activeRecTagInput.focus(), 50);
+}
+
+function closeActiveTagsDrawer() {
+    if (!activeRecTagsDrawer) return;
+    activeRecTagsDrawer.classList.add('hidden');
+    if (toggleActiveTagsBtn) toggleActiveTagsBtn.classList.remove('active');
+}
+
+async function renderActiveRecTags() {
+    if (toggleActiveTagsLabel) {
+        toggleActiveTagsLabel.textContent = activeRecordingTags.length > 0 
+            ? `Tags (${activeRecordingTags.length})` 
+            : 'Tags';
+    }
+    if (!activeRecTagsList) return;
+    if (activeRecordingTags.length === 0) {
+        activeRecTagsList.innerHTML = '<span style="font-size: 0.72rem; opacity: 0.5;">Nenhuma tag adicionada.</span>';
+        return;
+    }
+    const categories = await window.electronAPI.getTagCategories();
+    activeRecTagsList.innerHTML = activeRecordingTags.map((tag, idx) => {
+        const color = getTagColor(tag, categories);
+        return `
+            <span class="tag-badge tag-removable" data-tag-idx="${idx}" style="background-color: ${color}22; color: ${color}; border: 1px solid ${color}55;" title="Remover #${tag}">
+                <span>#${tag}</span>
+                <span class="tag-remove-icon">&times;</span>
+            </span>
+        `;
+    }).join('');
+
+    activeRecTagsList.querySelectorAll('.tag-removable').forEach(el => {
+        el.onclick = () => {
+            const idx = parseInt(el.getAttribute('data-tag-idx'), 10);
+            if (!isNaN(idx)) {
+                activeRecordingTags.splice(idx, 1);
+                renderActiveRecTags();
+                renderActiveRecTagSuggestions();
+            }
+        };
+    });
+}
+
+async function renderActiveRecTagSuggestions() {
+    if (!activeRecTagsSuggestions) return;
+    const categories = await window.electronAPI.getTagCategories();
+    const suggestionsMap = new Map();
+
+    // Sugerir APENAS tags que já foram inseridas anteriormente em outros vídeos
+    try {
+        const videos = await window.electronAPI.getLibraryVideos();
+        (videos || []).forEach(v => {
+            if (v.metadata && Array.isArray(v.metadata.tags)) {
+                v.metadata.tags.forEach(t => {
+                    const tag = typeof t === 'string' ? t.trim() : '';
+                    if (tag && !activeRecordingTags.includes(tag) && !suggestionsMap.has(tag)) {
+                        suggestionsMap.set(tag, getTagColor(tag, categories));
+                    }
+                });
+            }
+        });
+    } catch (e) { /* ignore */ }
+
+    const entries = Array.from(suggestionsMap.entries()).slice(0, 15);
+    if (entries.length === 0) {
+        activeRecTagsSuggestions.innerHTML = '';
+        return;
+    }
+
+    activeRecTagsSuggestions.innerHTML = entries.map(([tag, color]) => `
+        <button type="button" class="tag-badge tag-suggestion active-suggestion-chip" data-tag="${tag}" style="background-color: ${color}18; color: ${color}; border: 1px solid ${color}44;" title="Adicionar #${tag}">
+            + #${tag}
+        </button>
+    `).join('');
+
+    activeRecTagsSuggestions.querySelectorAll('.active-suggestion-chip').forEach(btn => {
+        btn.onclick = () => {
+            const tag = btn.getAttribute('data-tag');
+            if (tag && !activeRecordingTags.includes(tag)) {
+                activeRecordingTags.push(tag);
+                renderActiveRecTags();
+                renderActiveRecTagSuggestions();
+            }
+        };
+    });
+}
+
+function addActiveTagFromInput() {
+    if (!activeRecTagInput) return;
+    const val = activeRecTagInput.value.trim();
+    if (!val) return;
+    const parts = val.split(/[,;]+/).map(t => t.trim().replace(/^#/, '')).filter(t => t.length > 0);
+    parts.forEach(p => {
+        if (!activeRecordingTags.includes(p)) {
+            activeRecordingTags.push(p);
+        }
+    });
+    activeRecTagInput.value = '';
+    renderActiveRecTags();
+    renderActiveRecTagSuggestions();
+}
+
 async function startRecording(sourceId, handle, hasVideo = false) {
     const now = new Date();
     const timestamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
@@ -589,6 +738,7 @@ async function startRecording(sourceId, handle, hasVideo = false) {
         
         notesContainer.classList.remove('hidden');
         meetingNotes.value = "";
+        initActiveRecordingTags();
         
         const n = new Notification("Meet Record", {
             body: `Gravação Iniciada: ${currentMeetingName}`,
@@ -824,10 +974,22 @@ async function saveRecording() {
         return;
     }
 
+    // Extrair hashtags do campo de anotações
+    const noteText = meetingNotes ? meetingNotes.value : "";
+    const noteHashtags = (noteText.match(/#([a-zA-Z0-9_\u00C0-\u017F-]+)/g) || [])
+        .map(h => h.replace(/^#/, '').trim());
+
+    // Combinar tags ativas selecionadas + hashtags do texto
+    const combinedTags = Array.from(new Set([
+        ...activeRecordingTags,
+        ...noteHashtags
+    ])).filter(t => t.length > 0);
+
     const metadata = {
         title: currentMeetingName,
         date: now.toISOString(),
-        note: meetingNotes.value,
+        note: noteText,
+        tags: combinedTags,
         duration: duration,
         folderName: currentMeetingFolder
     };
@@ -854,6 +1016,7 @@ async function saveRecording() {
     }
     
     recordedChunks = [];
+    activeRecordingTags = [];
     isManualRecording = false;
 }
 

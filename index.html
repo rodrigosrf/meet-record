@@ -116,9 +116,31 @@
                     </div>
                 </div>
 
-                <!-- Notes Section -->
+                <!-- Notes & Tags Section -->
                 <div id="notesContainer" class="notes-container hidden">
-                    <textarea id="meetingNotes" placeholder="Adicione notas ou tags aqui..."></textarea>
+                    <textarea id="meetingNotes" placeholder="Adicione anotações da reunião ou #tags aqui..."></textarea>
+                    <div class="active-rec-tags-section">
+                        <div class="active-rec-tags-header">
+                            <div class="active-rec-tags-badges" id="activeRecTagsList"></div>
+                            <button type="button" id="toggleActiveTagsBtn" class="btn-toggle-active-tags" title="Gerenciar tags da gravação">
+                                <span class="tag-icon">🏷️</span>
+                                <span id="toggleActiveTagsLabel">Tags</span>
+                                <svg id="toggleActiveTagsChevron" class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </button>
+                        </div>
+
+                        <!-- Painel Colapsável -->
+                        <div class="active-rec-tags-drawer hidden" id="activeRecTagsDrawer">
+                            <div class="active-rec-tags-input-row">
+                                <input type="text" id="activeRecTagInput" class="active-rec-tag-input" placeholder="Nova tag... (Enter ou vírgula)">
+                                <button type="button" id="addActiveRecTagBtn" class="btn-active-tag-add">+ Tag</button>
+                            </div>
+                            <div class="active-rec-tags-carousel-wrapper" id="activeRecTagsCarouselWrapper">
+                                <div class="active-rec-tags-carousel-hint">💡 Sugestões de vídeos anteriores:</div>
+                                <div class="active-rec-tags-suggestions" id="activeRecTagsSuggestions"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="card-controls" id="cardControls">
