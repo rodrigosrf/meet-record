@@ -81,6 +81,15 @@ export async function generateOrUpdateMarkdownSidecar(mdPath, metadata = {}) {
         if (exists) {
             let content = await fs.promises.readFile(mdPath, 'utf8');
 
+            if (metadata.title && typeof metadata.title === 'string') {
+                const titleHeading = `# ${metadata.title.trim()}`;
+                if (/^# .*$/m.test(content)) {
+                    content = content.replace(/^# .*$/m, titleHeading);
+                } else {
+                    content = `${titleHeading}\n\n${content}`;
+                }
+            }
+
             if (metadata.tags !== undefined) {
                 const tagsRegex = /^\*\*Tags:\*\*.*$/m;
                 if (hasTags) {

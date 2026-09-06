@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { generateOrUpdateMarkdownSidecar } from './markdownService.js';
 
 export async function getLibraryVideosAsync(outputDir) {
     if (!outputDir) return [];
@@ -326,3 +327,142 @@ export async function reorganizeFilesAsync(outputDir, pathTemplate, resolveTempl
         return { success: false, error: e.message };
     }
 }
+
+export async function renameRecordingAsync(outputDir, oldFilePath, newTitle) {
+    if (!oldFilePath) {
+        return { success: false, error: 'Caminho do arquivo não fornecido.' };
+    }
+    const cleanTitle = (newTitle || '').trim();
+    if (!cleanTitle) {
+        return { success: false, error: 'O título não pode ser vazio.' };
+    }
+
+    try {
+        await fs.promises.access(oldFilePath);
+    } catch {
+        return { success: false, error: 'Arquivo original não encontrado.' };
+    }
+
+    try {
+        const dir = path.dirname(oldFilePath);
+        const parsed = path.parse(oldFilePath);
+        const oldExt = parsed.ext; // .mp3 or .webm
+        const oldBaseName = parsed.name;
+
+        // Sanitiza o título para nome de arquivo no Windows
+        const safeTitle = cleanTitle.replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, '_');
+
+        // Detecta se existe carimbo cronológico na base do arquivo (ex: 20260905_1430 ou 2026-09-05_1430)
+        const timestampMatch = oldBaseName.match(/^(\d{8}_\d{4,6}|\d{4}-\d{2}-\d{2}[_T-]?\d{0,6}|\d{13,14})(_|$)/);
+        let newBaseName = '';
+        if (timestampMatch) {
+            const prefix = timestampMatch[1];
+            newBaseName = `${prefix}_${safeTitle}`;
+        } else {
+            newBaseName = safeTitle;
+        }
+
+        // Se o nome gerado for vazio (ex: só continha caracteres inválidos), define um fallback
+        if (!newBaseName || newBaseName === '_') {
+            newBaseName = `Gravacao_${Date.now()}`;
+        }
+
+        // Evitar colisão se outro arquivo já existir com o mesmo newBaseName
+        let finalBaseName = newBaseName;
+        let counter = 1;
+        while (
+            finalBaseName !== oldBaseName &&
+            (fs.existsSync(path.join(dir, finalBaseName + oldExt)) ||
+             fs.existsSync(path.join(dir, finalBaseName + '.json')))
+        ) {
+            finalBaseName = `${newBaseName}_${counter}`;
+            counter++;
+        }
+
+        const newPrimaryPath = path.join(dir, finalBaseName + oldExt);
+
+        // 1. Ler e atualizar Metadados (.json)
+        const oldJsonPath = path.join(dir, oldBaseName + '.json');
+        const newJsonPath = path.join(dir, finalBaseName + '.json');
+        let metadata = {};
+
+        if (fs.existsSync(oldJsonPath)) {
+            try {
+                const metaStr = await fs.promises.readFile(oldJsonPath, 'utf8');
+                metadata = JSON.parse(metaStr);
+            } catch (e) {
+                metadata = {};
+            }
+        }
+
+        metadata.title = cleanTitle;
+        if (metadata.folderName && metadata.folderName.startsWith(oldBaseName)) {
+            metadata.folderName = metadata.folderName.replace(oldBaseName, finalBaseName);
+        }
+
+        // 2. Se o nome da base mudou, renomear arquivos físicos
+        if (finalBaseName !== oldBaseName) {
+            // Renomeia o arquivo principal (.mp3 ou .webm)
+            await fs.promises.rename(oldFilePath, newPrimaryPath);
+
+            // Renomeia sidecar alternativo (.webm <-> .mp3) se existir
+            const altExt = oldExt.toLowerCase() === '.mp3' ? '.webm' : '.mp3';
+            const oldAltPath = path.join(dir, oldBaseName + altExt);
+            const newAltPath = path.join(dir, finalBaseName + altExt);
+            if (fs.existsSync(oldAltPath)) {
+                try {
+                    await fs.promises.rename(oldAltPath, newAltPath);
+                } catch (e) { /* ignore */ }
+            }
+
+            // Escreve o novo .json e apaga o antigo
+            await fs.promises.writeFile(newJsonPath, JSON.stringify(metadata, null, 2), 'utf8');
+            if (fs.existsSync(oldJsonPath) && oldJsonPath !== newJsonPath) {
+                try {
+                    await fs.promises.unlink(oldJsonPath);
+                } catch (e) { /* ignore */ }
+            }
+
+            // Renomeia e atualiza o .md se existir
+            const oldMdPath = path.join(dir, oldBaseName + '.md');
+            const newMdPath = path.join(dir, finalBaseName + '.md');
+            if (fs.existsSync(oldMdPath)) {
+                try {
+                    await fs.promises.rename(oldMdPath, newMdPath);
+                } catch (e) { /* ignore */ }
+            }
+            await generateOrUpdateMarkdownSidecar(newMdPath, metadata);
+
+            // Renomeia prints/screenshots associados
+            try {
+                const dirFiles = await fs.promises.readdir(dir);
+                for (const file of dirFiles) {
+                    if (file.startsWith(oldBaseName) && (file.endsWith('.jpg') || file.endsWith('.png'))) {
+                        const oldImgPath = path.join(dir, file);
+                        const newImgName = file.replace(oldBaseName, finalBaseName);
+                        const newImgPath = path.join(dir, newImgName);
+                        try {
+                            await fs.promises.rename(oldImgPath, newImgPath);
+                        } catch (e) { /* ignore */ }
+                    }
+                }
+            } catch (e) { /* ignore */ }
+        } else {
+            // Mesma base de arquivo, apenas atualiza .json e .md
+            await fs.promises.writeFile(newJsonPath, JSON.stringify(metadata, null, 2), 'utf8');
+            const mdPath = path.join(dir, finalBaseName + '.md');
+            await generateOrUpdateMarkdownSidecar(mdPath, metadata);
+        }
+
+        return {
+            success: true,
+            newPath: newPrimaryPath,
+            newName: path.basename(newPrimaryPath),
+            newTitle: cleanTitle
+        };
+    } catch (err) {
+        console.error('Erro ao renomear gravação:', err);
+        return { success: false, error: err.message };
+    }
+}
+

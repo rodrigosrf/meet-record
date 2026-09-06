@@ -265,3 +265,13 @@ function updateSpeedUI(speed) {
         }
     });
 }
+
+export function updatePlayingTrackPath(oldPath, newPath, newName) {
+    if (currentlyPlayingPath === oldPath) {
+        currentlyPlayingPath = newPath;
+        const playerFileName = document.getElementById('playerFileName');
+        if (playerFileName && newName) {
+            playerFileName.textContent = newName;
+        }
+    }
+}

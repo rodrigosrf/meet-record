@@ -12,7 +12,8 @@ import {
     deleteRecordingAsync, 
     archiveRecordingsAsync, 
     reorganizeFilesAsync,
-    migrateImagesDirectoryAsync
+    migrateImagesDirectoryAsync,
+    renameRecordingAsync
 } from './src/main/libraryService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -365,6 +366,11 @@ ipcMain.handle('get-file-buffer', async (event, filePath) => {
 
 ipcMain.handle('delete-file', async (event, filePath) => {
     return await deleteRecordingAsync(filePath);
+});
+
+ipcMain.handle('rename-recording', async (event, { filePath, newTitle }) => {
+    const outputDir = store.get('outputDirectory');
+    return await renameRecordingAsync(outputDir, filePath, newTitle);
 });
 
 ipcMain.handle('get-recording-thumbnail', async (event, folderName, recPath) => {

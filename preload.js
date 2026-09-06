@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openFileLocation: (filePath) => ipcRenderer.invoke('open-file-location', filePath),
     getFileBuffer: (filePath) => ipcRenderer.invoke('get-file-buffer', filePath),
     deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
+    renameRecording: (data) => ipcRenderer.invoke('rename-recording', data),
     saveScreenshot: (data) => ipcRenderer.invoke('save-screenshot', data),
     discardMeetingScreenshots: (folderName) => ipcRenderer.invoke('discard-meeting-screenshots', folderName),
     onStartManualRecording: (callback) => ipcRenderer.on('start-manual-recording', () => callback()),

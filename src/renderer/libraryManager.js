@@ -1,5 +1,5 @@
 import { getTagColor, openTagEditorModal } from './tagEditor.js';
-import { getCurrentlyPlayingPath, getPlaybackState, togglePlayPauseAudio } from './audioPlayer.js';
+import { getCurrentlyPlayingPath, getPlaybackState, togglePlayPauseAudio, updatePlayingTrackPath } from './audioPlayer.js';
 
 let allVideos = [];
 let tagCategories = [];
@@ -12,6 +12,11 @@ let currentCallbacks = {
     onOpenTagEditor: null
 };
 
+let tooltipEl = null;
+let tooltipTimeout = null;
+let currentHoveredWrapper = null;
+let marqueeResizeObserver = null;
+
 export async function initLibraryManager(callbacks = {}) {
     currentCallbacks = { ...currentCallbacks, ...callbacks };
 
@@ -22,6 +27,46 @@ export async function initLibraryManager(callbacks = {}) {
             renderLibraryUI(currentCallbacks, true);
         });
     }
+
+    const libraryContent = document.getElementById('libraryContent');
+    if (libraryContent) {
+        libraryContent.addEventListener('mouseover', (e) => {
+            const wrapper = e.target.closest('.lib-item-title-wrapper');
+            if (wrapper && libraryContent.contains(wrapper)) {
+                if (wrapper.classList.contains('is-editing')) return;
+                if (currentHoveredWrapper !== wrapper) {
+                    currentHoveredWrapper = wrapper;
+                    clearTimeout(tooltipTimeout);
+                    tooltipTimeout = setTimeout(() => {
+                        if (currentHoveredWrapper === wrapper) {
+                            showCustomTooltip(wrapper);
+                        }
+                    }, 100);
+                }
+            }
+        });
+
+        libraryContent.addEventListener('mouseout', (e) => {
+            const wrapper = e.target.closest('.lib-item-title-wrapper');
+            if (wrapper) {
+                const related = e.relatedTarget;
+                if (!related || !wrapper.contains(related)) {
+                    hideCustomTooltip();
+                }
+            }
+        });
+
+        libraryContent.addEventListener('scroll', () => {
+            hideCustomTooltip();
+        }, { passive: true });
+
+        if (!marqueeResizeObserver && window.ResizeObserver) {
+            marqueeResizeObserver = new ResizeObserver(() => {
+                updateTitleMarquees();
+            });
+            marqueeResizeObserver.observe(libraryContent);
+        }
+    }
 }
 
 export async function renderLibraryUI(callbacks = {}, skipFetch = false) {
@@ -31,6 +76,8 @@ export async function renderLibraryUI(callbacks = {}, skipFetch = false) {
 
     const libraryContent = document.getElementById('libraryContent');
     if (!libraryContent) return;
+
+    hideCustomTooltip();
 
     if (!skipFetch) {
         libraryContent.innerHTML = `
@@ -60,7 +107,13 @@ export async function renderLibraryUI(callbacks = {}, skipFetch = false) {
         return;
     }
 
-    let filtered = allVideos.filter(rec => rec.name.toLowerCase().includes(searchQuery));
+    let filtered = allVideos.filter(rec => {
+        const cleanTitle = getCleanRecordingTitle(rec).toLowerCase();
+        const rawName = (rec.name || '').toLowerCase();
+        const note = (rec.metadata?.note || '').toLowerCase();
+        const tags = (rec.metadata?.tags || []).join(' ').toLowerCase();
+        return cleanTitle.includes(searchQuery) || rawName.includes(searchQuery) || note.includes(searchQuery) || tags.includes(searchQuery);
+    });
 
     if (tagFilterQuery === 'favorites') {
         filtered = filtered.filter(rec => rec.metadata && rec.metadata.favorite === true);
@@ -137,6 +190,8 @@ export async function renderLibraryUI(callbacks = {}, skipFetch = false) {
             const isThisPlaying = (currentPlaying === rec.path && playbackState === 'playing');
             const isThisPaused = (currentPlaying === rec.path && playbackState === 'paused');
 
+            const cleanTitle = getCleanRecordingTitle(rec);
+
             item.innerHTML = `
                 <div class="lib-item-thumbnail" data-action="play-card" title="Clique para ${buttonText.toLowerCase()}">
                     ${thumbnailImgHtml}
@@ -166,7 +221,22 @@ export async function renderLibraryUI(callbacks = {}, skipFetch = false) {
                 <div class="lib-item-order">${order}</div>
 
                 <div class="lib-item-info">
-                    <h4 title="${rec.name}">${rec.name}</h4>
+                    <div class="lib-item-title-wrapper" 
+                         data-tooltip-title="${escapeHtml(cleanTitle)}" 
+                         data-raw-name="${escapeHtml(rec.name)}"
+                         data-format="${escapeHtml(badgeText)}"
+                         data-duration="${escapeHtml(durationStr)}"
+                         data-size="${escapeHtml(sizeStr)}">
+                        <div class="lib-item-title-track">
+                            <h4 class="lib-item-title">${escapeHtml(cleanTitle)}</h4>
+                        </div>
+                        <button class="lib-item-edit-title-btn" data-action="edit-title" title="Renomear gravação (ou clique duplo)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                        </button>
+                    </div>
                     <div class="lib-item-meta-row">
                         <div class="lib-item-datetime">
                             ${dateFormatted ? `
@@ -298,10 +368,17 @@ export async function renderLibraryUI(callbacks = {}, skipFetch = false) {
                 });
             }
 
+            // Setup Title Editing (Inline edit & dblclick)
+            setupTitleEditHandlers(item, rec);
+
             groupContainer.appendChild(item);
         }
         libraryContent.appendChild(groupContainer);
     }
+
+    requestAnimationFrame(() => {
+        updateTitleMarquees();
+    });
 }
 
 export function updateLibraryPlayingState(activePath, state) {
@@ -455,4 +532,344 @@ function renderTagBadges(tags) {
         return `<span class="tag-badge" style="background-color: ${color}20; color: ${color}; border: 1px solid ${color}55;">#${t}</span>`;
     }).join('');
 }
+
+export function getCleanRecordingTitle(rec) {
+    if (!rec) return 'Gravação';
+
+    // 1. Priorizar título dos metadados se existir e for significativo
+    if (rec.metadata && rec.metadata.title && typeof rec.metadata.title === 'string') {
+        const rawMetaTitle = rec.metadata.title.trim();
+        if (rawMetaTitle && rawMetaTitle !== 'Sem_Titulo' && rawMetaTitle !== 'Sem Título') {
+            let t = rawMetaTitle.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+            // Remover carimbo numérico no início se houver
+            t = t.replace(/^(\d{8}_\d{4,6}|\d{4}-\d{2}-\d{2}[_T]\d{2}[-:]?\d{2}(?:[-:]?\d{2})?)_?/, '').trim();
+            if (t.length > 0) return t;
+        }
+    }
+
+    // 2. Extrair e limpar a partir do nome do arquivo físico
+    let name = (rec.name || '').replace(/\.(mp3|webm|wav|m4a|ogg)$/i, '');
+    // Remover prefixo de timestamp (ex: 20260826_2253_, 20260826_225340_, 2026-08-26_2253_, epoch)
+    name = name.replace(/^(\d{8}_\d{4,6}|\d{4}-\d{2}-\d{2}[_T-]?\d{0,6}|\d{13,14})_?/, '');
+    name = name.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+
+    return name || 'Gravação';
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function getOrCreateTooltip() {
+    if (!tooltipEl) {
+        tooltipEl = document.getElementById('libTitleTooltip');
+        if (!tooltipEl) {
+            tooltipEl = document.createElement('div');
+            tooltipEl.id = 'libTitleTooltip';
+            tooltipEl.className = 'lib-custom-tooltip';
+            tooltipEl.setAttribute('aria-hidden', 'true');
+            tooltipEl.innerHTML = `
+                <div class="lib-tooltip-header">
+                    <svg class="lib-tooltip-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                        <line x1="12" y1="19" x2="12" y2="22"></line>
+                    </svg>
+                    <span class="lib-tooltip-title"></span>
+                </div>
+                <div class="lib-tooltip-file-row">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    <span class="lib-tooltip-file"></span>
+                </div>
+                <div class="lib-tooltip-meta">
+                    <span class="lib-tooltip-badge"></span>
+                    <span class="lib-tooltip-duration"></span>
+                    <span class="lib-tooltip-size"></span>
+                </div>
+            `;
+            document.body.appendChild(tooltipEl);
+        }
+    }
+    return tooltipEl;
+}
+
+function showCustomTooltip(target) {
+    const tooltip = getOrCreateTooltip();
+    const title = target.getAttribute('data-tooltip-title') || '';
+    const rawFile = target.getAttribute('data-raw-name') || '';
+    const format = target.getAttribute('data-format') || '';
+    const duration = target.getAttribute('data-duration') || '';
+    const size = target.getAttribute('data-size') || '';
+
+    if (!title) return;
+
+    tooltip.querySelector('.lib-tooltip-title').textContent = title;
+    
+    const fileSpan = tooltip.querySelector('.lib-tooltip-file');
+    const fileRow = tooltip.querySelector('.lib-tooltip-file-row');
+    if (rawFile) {
+        fileSpan.textContent = rawFile;
+        fileRow.style.display = 'flex';
+    } else {
+        fileRow.style.display = 'none';
+    }
+
+    const badgeEl = tooltip.querySelector('.lib-tooltip-badge');
+    if (format) {
+        badgeEl.textContent = format;
+        badgeEl.style.display = 'inline-flex';
+    } else {
+        badgeEl.style.display = 'none';
+    }
+
+    const durationEl = tooltip.querySelector('.lib-tooltip-duration');
+    if (duration) {
+        durationEl.textContent = `⏱ ${duration}`;
+        durationEl.style.display = 'inline-flex';
+    } else {
+        durationEl.style.display = 'none';
+    }
+
+    const sizeEl = tooltip.querySelector('.lib-tooltip-size');
+    if (size) {
+        sizeEl.textContent = `💾 ${size}`;
+        sizeEl.style.display = 'inline-flex';
+    } else {
+        sizeEl.style.display = 'none';
+    }
+
+    tooltip.classList.add('is-visible');
+
+    // Posicionamento inteligente sobre o card
+    const rect = target.getBoundingClientRect();
+    const tipWidth = tooltip.offsetWidth || 220;
+    const tipHeight = tooltip.offsetHeight || 64;
+
+    let left = rect.left + (rect.width / 2) - (tipWidth / 2);
+    left = Math.max(12, Math.min(left, window.innerWidth - tipWidth - 12));
+
+    let top = rect.top - tipHeight - 8;
+    if (top < 10) {
+        top = rect.bottom + 8;
+    }
+
+    tooltip.style.left = `${Math.round(left)}px`;
+    tooltip.style.top = `${Math.round(top)}px`;
+}
+
+function hideCustomTooltip() {
+    if (tooltipTimeout) {
+        clearTimeout(tooltipTimeout);
+        tooltipTimeout = null;
+    }
+    currentHoveredWrapper = null;
+    const tooltip = document.getElementById('libTitleTooltip');
+    if (tooltip) {
+        tooltip.classList.remove('is-visible');
+    }
+}
+
+function updateTitleMarquees() {
+    const wrappers = document.querySelectorAll('.lib-item-title-wrapper');
+    wrappers.forEach(wrapper => {
+        if (wrapper.classList.contains('is-editing')) return;
+        const titleEl = wrapper.querySelector('.lib-item-title');
+        if (!titleEl) return;
+
+        // Resetar temporariamente para medir scrollWidth natural
+        wrapper.classList.remove('is-overflowing');
+        titleEl.style.removeProperty('--marquee-dist');
+        titleEl.style.removeProperty('--marquee-duration');
+
+        const overflow = titleEl.scrollWidth - wrapper.clientWidth;
+        if (overflow > 4) {
+            wrapper.classList.add('is-overflowing');
+            const dist = -(overflow + 14);
+            titleEl.style.setProperty('--marquee-dist', `${dist}px`);
+            const duration = Math.max(3.5, (overflow / 30) + 1.8);
+            titleEl.style.setProperty('--marquee-duration', `${duration.toFixed(1)}s`);
+        }
+    });
+}
+
+function setupTitleEditHandlers(item, rec) {
+    const wrapper = item.querySelector('.lib-item-title-wrapper');
+    const editBtn = item.querySelector('[data-action="edit-title"]');
+    if (!wrapper) return;
+
+    const triggerEdit = (e) => {
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+        hideCustomTooltip();
+        startInlineTitleEdit(item, rec);
+    };
+
+    if (editBtn) {
+        editBtn.addEventListener('click', triggerEdit);
+    }
+
+    wrapper.addEventListener('dblclick', triggerEdit);
+}
+
+function startInlineTitleEdit(item, rec) {
+    const wrapper = item.querySelector('.lib-item-title-wrapper');
+    if (!wrapper || wrapper.classList.contains('is-editing')) return;
+
+    hideCustomTooltip();
+
+    const titleTrack = wrapper.querySelector('.lib-item-title-track');
+    const titleEl = wrapper.querySelector('.lib-item-title');
+    const editBtn = wrapper.querySelector('.lib-item-edit-title-btn');
+    const currentTitle = getCleanRecordingTitle(rec);
+
+    wrapper.classList.add('is-editing');
+    if (titleTrack) titleTrack.style.display = 'none';
+    if (editBtn) editBtn.style.display = 'none';
+
+    const editForm = document.createElement('div');
+    editForm.className = 'lib-item-title-edit-form';
+    editForm.innerHTML = `
+        <input type="text" class="lib-item-title-input" value="${escapeHtml(currentTitle)}" maxlength="100" spellcheck="false" autocomplete="off" />
+        <div class="lib-item-title-edit-actions">
+            <button type="button" class="lib-item-title-save-btn" title="Salvar (Enter)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </button>
+            <button type="button" class="lib-item-title-cancel-btn" title="Cancelar (Esc)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+        </div>
+    `;
+
+    wrapper.appendChild(editForm);
+
+    const input = editForm.querySelector('.lib-item-title-input');
+    const saveBtn = editForm.querySelector('.lib-item-title-save-btn');
+    const cancelBtn = editForm.querySelector('.lib-item-title-cancel-btn');
+
+    let isFinished = false;
+
+    const cleanup = () => {
+        if (isFinished) return;
+        isFinished = true;
+        editForm.remove();
+        if (titleTrack) titleTrack.style.display = '';
+        if (editBtn) editBtn.style.display = '';
+        wrapper.classList.remove('is-editing');
+    };
+
+    const handleCancel = (e) => {
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+        cleanup();
+    };
+
+    const handleSave = async (e) => {
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+        if (isFinished) return;
+
+        const newTitle = input.value.trim();
+        if (!newTitle || newTitle === currentTitle) {
+            cleanup();
+            return;
+        }
+
+        input.disabled = true;
+        saveBtn.disabled = true;
+        cancelBtn.disabled = true;
+        editForm.classList.add('is-saving');
+
+        try {
+            const res = await window.electronAPI.renameRecording({
+                filePath: rec.path,
+                newTitle: newTitle
+            });
+
+            if (res && res.success) {
+                // Atualiza o player de áudio se for a gravação em reprodução
+                updatePlayingTrackPath(rec.path, res.newPath, res.newName);
+
+                // Atualiza modelo em memória
+                rec.path = res.newPath;
+                rec.name = res.newName;
+                if (!rec.metadata) rec.metadata = {};
+                rec.metadata.title = res.newTitle;
+
+                // Atualiza o card no DOM
+                item.setAttribute('data-rec-path', res.newPath);
+                const updatedCleanTitle = getCleanRecordingTitle(rec);
+                if (titleEl) {
+                    titleEl.textContent = updatedCleanTitle;
+                    titleEl.classList.remove('renamed-pulse-glow');
+                    void titleEl.offsetWidth; // trigger reflow
+                    titleEl.classList.add('renamed-pulse-glow');
+                    setTimeout(() => titleEl.classList.remove('renamed-pulse-glow'), 1500);
+                }
+                wrapper.setAttribute('data-tooltip-title', updatedCleanTitle);
+                wrapper.setAttribute('data-raw-name', res.newName);
+
+                cleanup();
+                updateTitleMarquees();
+            } else {
+                input.disabled = false;
+                saveBtn.disabled = false;
+                cancelBtn.disabled = false;
+                editForm.classList.remove('is-saving');
+                editForm.classList.add('has-error');
+                input.focus();
+                setTimeout(() => editForm.classList.remove('has-error'), 600);
+                alert(`Erro ao renomear: ${res?.error || 'Não foi possível salvar.'}`);
+            }
+        } catch (err) {
+            input.disabled = false;
+            saveBtn.disabled = false;
+            cancelBtn.disabled = false;
+            editForm.classList.remove('is-saving');
+            editForm.classList.add('has-error');
+            setTimeout(() => editForm.classList.remove('has-error'), 600);
+            alert(`Erro ao renomear: ${err.message}`);
+        }
+    };
+
+    saveBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    saveBtn.addEventListener('click', handleSave);
+    cancelBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    cancelBtn.addEventListener('click', handleCancel);
+
+    editForm.addEventListener('click', (e) => e.stopPropagation());
+    editForm.addEventListener('dblclick', (e) => e.stopPropagation());
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleSave();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            handleCancel();
+        }
+    });
+
+    input.addEventListener('blur', (e) => {
+        if (e.relatedTarget === saveBtn || e.relatedTarget === cancelBtn) return;
+        handleSave();
+    });
+
+    requestAnimationFrame(() => {
+        input.focus();
+        input.select();
+    });
+}
+
 
