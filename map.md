@@ -34,7 +34,7 @@ meet-record/
 ├── 📄 package.json              # Configurações do projeto, scripts e electron-builder
 ├── 📂 src/
 │   ├── 📂 main/
-│   │   ├── 📄 ffmpegService.js  # Conversão de áudio para MP3, extração, geração de waveform banner via FFmpeg
+│   │   ├── 📄 ffmpegService.js  # Conversão de áudio para MP3 e extração via FFmpeg
 │   │   ├── 📄 libraryService.js # Gestão de arquivos de gravação no disco, thumbs, exclusão e arquivamento
 │   │   └── 📄 markdownService.js# Gestão, criação e sincronização incremental de notas e tags em arquivos Markdown (.md)
 │   └── 📂 renderer/
@@ -63,7 +63,7 @@ meet-record/
 3. **Detecção de Silêncio**: O Renderer monitora o áudio usando `AudioContext` e `AnalyserNode`. Se houver silêncio pelo tempo configurado (`autoStopSilenceMinutes`), dispara o auto-stop.
 4. **Overlay Reativo**: O nível `vuLevel` é transmitido para `overlay.js` via IPC para acionar o Voice Activity Ambient Glow.
 5. **Finalização**: Os Chunks gravados via `MediaRecorder` são enviados para o Main Process (`save-file`).
-6. **Pós-processamento**: `main.js` salva os arquivos e chama `ffmpegService.js` para converter o áudio para MP3 e gerar o banner senoidal `_waveform.png`.
+6. **Pós-processamento**: `main.js` salva os arquivos e chama `ffmpegService.js` para converter o áudio para MP3 e salvar metadados.
 
 ---
 
@@ -109,7 +109,6 @@ Configuração padrão definida em `main.js`:
     "clickRipples": true,
     "privacyBlur": false,
     "lowerThirds": true,
-    "generateWaveformBanner": true,
     "performanceProfile": "balanced"
   },
   "tagCategories": []

@@ -37,7 +37,6 @@ const store = new Store({
             clickRipples: true,
             privacyBlur: false,
             lowerThirds: true,
-            generateWaveformBanner: true,
             performanceProfile: 'balanced'
         },
         tagCategories: []
