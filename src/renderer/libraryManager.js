@@ -857,6 +857,7 @@ function startInlineTitleEdit(item, rec) {
             handleSave();
         } else if (e.key === 'Escape') {
             e.preventDefault();
+            e.stopPropagation();
             handleCancel();
         }
     });

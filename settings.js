@@ -56,14 +56,52 @@ async function init() {
     }
 
     const autoStopSilenceInput = document.getElementById('autoStopSilenceInput');
+    const saveSilenceConfig = async () => {
+        if (!autoStopSilenceInput) return;
+        const val = parseFloat(autoStopSilenceInput.value);
+        const minutes = isNaN(val) || val < 0 ? 0 : val;
+        await window.electronAPI.updateConfig({ autoStopSilenceMinutes: minutes });
+    };
+
     if (autoStopSilenceInput) {
-        autoStopSilenceInput.value = config.autoStopSilenceMinutes !== undefined ? config.autoStopSilenceMinutes : 1;
-        autoStopSilenceInput.addEventListener('change', async () => {
+        autoStopSilenceInput.value = config.autoStopSilenceMinutes !== undefined ? config.autoStopSilenceMinutes : 5;
+        autoStopSilenceInput.addEventListener('input', saveSilenceConfig);
+        autoStopSilenceInput.addEventListener('change', saveSilenceConfig);
+        autoStopSilenceInput.addEventListener('blur', saveSilenceConfig);
+    }
+
+    const closeSettings = async () => {
+        try {
+            await saveSilenceConfig();
+            if (typeof saveOrgConfig === 'function') {
+                await saveOrgConfig();
+            }
+        } catch (err) {
+            console.error('Erro ao salvar configurações ao fechar:', err);
+        } finally {
+            window.close();
+        }
+    };
+
+    const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+    if (closeSettingsBtn) {
+        closeSettingsBtn.addEventListener('click', closeSettings);
+    }
+
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            closeSettings();
+        }
+    });
+
+    window.addEventListener('beforeunload', () => {
+        if (autoStopSilenceInput) {
             const val = parseFloat(autoStopSilenceInput.value);
             const minutes = isNaN(val) || val < 0 ? 0 : val;
-            await window.electronAPI.updateConfig({ autoStopSilenceMinutes: minutes });
-        });
-    }
+            window.electronAPI.updateConfig({ autoStopSilenceMinutes: minutes });
+        }
+    });
 
     // General Listeners
     if (changePathBtn) {

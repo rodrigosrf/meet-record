@@ -191,6 +191,7 @@ function setupTagEditorListeners() {
                 e.preventDefault();
                 addTagFromInput();
             } else if (e.key === 'Escape') {
+                e.stopPropagation();
                 closeTagEditorModal();
             }
         };

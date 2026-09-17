@@ -60,7 +60,7 @@ meet-record/
 ### B. Ciclo de Gravação de Áudio/Vídeo com Efeitos
 1. **Início**: Acionado automaticamente pela detecção ou manualmente via UI/Overlay (`start-manual-recording`).
 2. **Captura & Composição**: O Renderer (`renderer.js`) captura áudio/vídeo e aplica o `videoCompositor.js` (se configurado) para renderizar Spotlight do cursor, ripples de clique e desfoque de privacidade a 60 FPS.
-3. **Detecção de Silêncio**: O Renderer monitora o áudio usando `AudioContext` e `AnalyserNode`. Se houver silêncio pelo tempo configurado (`autoStopSilenceMinutes`), dispara o auto-stop.
+3. **Detecção de Silêncio**: O Renderer monitora o áudio usando `AudioContext` e `AnalyserNode`. Se houver silêncio pelo tempo configurado (`autoStopSilenceMinutes`, padrão 5 min), dispara o auto-stop.
 4. **Overlay Reativo**: O nível `vuLevel` é transmitido para `overlay.js` via IPC para acionar o Voice Activity Ambient Glow.
 5. **Finalização**: Os Chunks gravados via `MediaRecorder` são enviados para o Main Process (`save-file`).
 6. **Pós-processamento**: `main.js` salva os arquivos e chama `ffmpegService.js` para converter o áudio para MP3 e salvar metadados.
@@ -95,7 +95,7 @@ Configuração padrão definida em `main.js`:
 {
   "outputDirectory": "",
   "autoRecord": true,
-  "autoStopSilenceMinutes": 1,
+  "autoStopSilenceMinutes": 5,
   "organizationConfig": {
     "pathTemplate": "{year}-{month}-{day}",
     "fileNamingTemplate": "{timestamp}_{title}",
@@ -125,8 +125,8 @@ Ao modificar uma funcionalidade específica, consulte este guia antes de ler os 
     👉 Editar [detectMeetings.ps1](file:///d:/Dev/meet-record/detectMeetings.ps1) (função `Get-ActiveMeetings`) e parsing em [main.js](file:///d:/Dev/meet-record/main.js).
 *   **Ajustar conversão de áudio, geração de .md ou execução do FFmpeg**:
     👉 Editar [src/main/ffmpegService.js](file:///d:/Dev/meet-record/src/main/ffmpegService.js) e [src/main/markdownService.js](file:///d:/Dev/meet-record/src/main/markdownService.js) (arquivos `.md` sidecar sincronizam tags e notas da reunião).
-*   **Modificar a lista de gravações, biblioteca, capas/thumbnails**:
-    👉 Editar [src/main/libraryService.js](file:///d:/Dev/meet-record/src/main/libraryService.js) e [src/renderer/libraryManager.js](file:///d:/Dev/meet-record/src/renderer/libraryManager.js) (capas automáticas são capturadas após 1 min com foco na janela do Teams).
+*   **Modificar a lista de gravações, biblioteca, capas/thumbnails e capturas de tela**:
+    👉 Editar [src/main/libraryService.js](file:///d:/Dev/meet-record/src/main/libraryService.js) e [src/renderer/libraryManager.js](file:///d:/Dev/meet-record/src/renderer/libraryManager.js). As capturas de tela durante as gravações (prints manuais e capas) são salvas em pasta única fixa `<outputDirectory>/screenshots/`, independente do template por data das gravações. Ao renomear/excluir gravações, as imagens vinculadas em `screenshots/` são sincronizadas.
 *   **Ajustar a captura de áudio/vídeo WebRTC, visualizador contínuo ou detecção de silêncio**:
     👉 Editar [renderer.js](file:///d:/Dev/meet-record/renderer.js), [src/renderer/audioVisualizer.js](file:///d:/Dev/meet-record/src/renderer/audioVisualizer.js) e [src/renderer/audioDeviceManager.js](file:///d:/Dev/meet-record/src/renderer/audioDeviceManager.js).
 *   **Modificar o Overlay flutuante**:

@@ -12,7 +12,6 @@ import {
     deleteRecordingAsync, 
     archiveRecordingsAsync, 
     reorganizeFilesAsync,
-    migrateImagesDirectoryAsync,
     renameRecordingAsync
 } from './src/main/libraryService.js';
 
@@ -23,7 +22,7 @@ const store = new Store({
     defaults: {
         outputDirectory: '',
         autoRecord: true,
-        autoStopSilenceMinutes: 1,
+        autoStopSilenceMinutes: 5,
         organizationConfig: {
             pathTemplate: '{year}-{month}-{day}',
             fileNamingTemplate: '{timestamp}_{title}',
@@ -42,6 +41,11 @@ const store = new Store({
         tagCategories: []
     }
 });
+
+// Garante migracao para o padrao de 5 minutos caso ainda nao tenha sido customizado pelo usuario
+if (!store.get('autoStopSilenceCustomized')) {
+    store.set('autoStopSilenceMinutes', 5);
+}
 
 function resolveTemplate(template, metadata) {
     const now = new Date();
@@ -212,7 +216,6 @@ function createOverlayWindow() {
 app.whenReady().then(() => {
     createWindow();
     startDetectionLoop();
-    migrateImagesDirectoryAsync(store.get('outputDirectory'));
     cleanupOldImages();
 
     app.on('activate', function () {
@@ -263,7 +266,8 @@ ipcMain.handle('select-directory', async () => {
 ipcMain.handle('get-config', () => {
     return {
         outputDirectory: store.get('outputDirectory'),
-        autoRecord: store.get('autoRecord')
+        autoRecord: store.get('autoRecord'),
+        autoStopSilenceMinutes: store.get('autoStopSilenceMinutes') !== undefined ? store.get('autoStopSilenceMinutes') : 5
     };
 });
 
@@ -274,10 +278,16 @@ ipcMain.handle('update-config', (event, newConfig) => {
     if (newConfig.autoRecord !== undefined) {
         store.set('autoRecord', newConfig.autoRecord);
     }
+    if (newConfig.autoStopSilenceMinutes !== undefined) {
+        const val = parseFloat(newConfig.autoStopSilenceMinutes);
+        store.set('autoStopSilenceMinutes', isNaN(val) || val < 0 ? 0 : val);
+        store.set('autoStopSilenceCustomized', true);
+    }
     
     const updatedConfig = {
         outputDirectory: store.get('outputDirectory'),
-        autoRecord: store.get('autoRecord')
+        autoRecord: store.get('autoRecord'),
+        autoStopSilenceMinutes: store.get('autoStopSilenceMinutes')
     };
     
     mainWindow.webContents.send('config-updated', updatedConfig);
@@ -364,7 +374,8 @@ ipcMain.handle('get-file-buffer', async (event, filePath) => {
 });
 
 ipcMain.handle('delete-file', async (event, filePath) => {
-    return await deleteRecordingAsync(filePath);
+    const outputDir = store.get('outputDirectory');
+    return await deleteRecordingAsync(filePath, outputDir);
 });
 
 ipcMain.handle('rename-recording', async (event, { filePath, newTitle }) => {
@@ -426,10 +437,7 @@ ipcMain.handle('save-screenshot', async (event, { buffer, fileName, folderName, 
     const outputDir = store.get('outputDirectory');
     if (!outputDir) return { success: false, error: 'Diretório de saída não configurado.' };
 
-    const orgConfig = store.get('organizationConfig');
-    const pathTemplate = orgConfig?.pathTemplate || '{year}-{month}-{day}';
-    const resolvedDir = resolveTemplate(pathTemplate, metadata || { title: folderName });
-    const targetDir = path.join(outputDir, resolvedDir);
+    const targetDir = path.join(outputDir, 'screenshots');
 
     try {
         if (!fs.existsSync(targetDir)) {
@@ -566,7 +574,7 @@ function cleanupOldImages() {
             items.forEach(item => {
                 const fullPath = path.join(dir, item.name);
                 if (item.isDirectory()) {
-                    if (item.name === 'archive') return;
+                    if (item.name === 'archive' || item.name === 'screenshots') return;
                     cleanDir(fullPath);
                     // Remove empty subdirectories if any
                     try {

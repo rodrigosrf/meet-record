@@ -24,6 +24,7 @@ export async function getLibraryVideosAsync(outputDir) {
         for (const entry of entries) {
             const fullPath = path.join(currentPath, entry.name);
             if (entry.isDirectory()) {
+                if (entry.name === 'archive' || entry.name === 'screenshots') continue;
                 await scanDir(fullPath);
             } else if (entry.name.endsWith('.mp3') || entry.name.endsWith('.webm')) {
                 const baseName = path.parse(fullPath).name;
@@ -99,21 +100,26 @@ export async function getRecordingThumbnailAsync(outputDir, folderName, recPath)
         return null;
     };
 
-    // 1. Try directory of recPath if provided
+    // 1. Try screenshots directory in outputDir
+    const screenshotsDir = path.join(outputDir, 'screenshots');
+    const screenResult = await findImageInDir(screenshotsDir);
+    if (screenResult) return screenResult;
+
+    // 2. Try directory of recPath if provided (for legacy recordings)
     if (recPath) {
         const recDir = path.dirname(recPath);
         const result = await findImageInDir(recDir);
         if (result) return result;
     }
 
-    // 2. Recursive scan in outputDir
+    // 3. Recursive scan in outputDir
     async function scanForImage(currentPath) {
         try {
             const entries = await fs.promises.readdir(currentPath, { withFileTypes: true });
             for (const entry of entries) {
                 const fullPath = path.join(currentPath, entry.name);
                 if (entry.isDirectory()) {
-                    if (entry.name === 'archive') continue;
+                    if (entry.name === 'archive' || entry.name === 'screenshots') continue;
                     const res = await findImageInDir(fullPath);
                     if (res) return res;
                     const subRes = await scanForImage(fullPath);
@@ -127,52 +133,19 @@ export async function getRecordingThumbnailAsync(outputDir, folderName, recPath)
     return await scanForImage(outputDir);
 }
 
-export async function migrateImagesDirectoryAsync(outputDir) {
-    if (!outputDir) return;
-    const imagesDir = path.join(outputDir, 'images');
-    try {
-        await fs.promises.access(imagesDir);
-    } catch {
-        return;
-    }
-
-    try {
-        const files = await fs.promises.readdir(imagesDir);
-        for (const file of files) {
-            const srcPath = path.join(imagesDir, file);
-            const stat = await fs.promises.stat(srcPath);
-            if (stat.isFile() && (file.endsWith('.jpg') || file.endsWith('.png'))) {
-                let targetSubDir = '';
-                const match = file.match(/^(\d{4})(\d{2})(\d{2})/);
-                if (match) {
-                    targetSubDir = `${match[1]}-${match[2]}-${match[3]}`;
-                } else {
-                    const d = stat.mtime;
-                    const pad = n => String(n).padStart(2, '0');
-                    targetSubDir = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-                }
-
-                const destDir = path.join(outputDir, targetSubDir);
-                await fs.promises.mkdir(destDir, { recursive: true });
-                const destPath = path.join(destDir, file);
-                await fs.promises.rename(srcPath, destPath);
-            }
-        }
-
-        const remaining = await fs.promises.readdir(imagesDir);
-        if (remaining.length === 0) {
-            await fs.promises.rmdir(imagesDir);
-        }
-    } catch (e) {
-        console.error('Error migrating images directory:', e);
-    }
-}
-
-export async function deleteRecordingAsync(filePath) {
+export async function deleteRecordingAsync(filePath, outputDir) {
     try {
         await fs.promises.access(filePath);
         const baseName = path.parse(filePath).name;
         const dir = path.dirname(filePath);
+
+        // Read metadata if available to get folderName
+        let folderName = baseName;
+        try {
+            const metaContent = await fs.promises.readFile(path.join(dir, baseName + '.json'), 'utf8');
+            const meta = JSON.parse(metaContent);
+            if (meta.folderName) folderName = meta.folderName;
+        } catch (e) { /* ignore */ }
 
         // Delete primary file
         await fs.promises.unlink(filePath);
@@ -187,15 +160,30 @@ export async function deleteRecordingAsync(filePath) {
             } catch (e) { /* ignore if doesn't exist */ }
         }
 
-        // Delete associated screenshots/prints starting with baseName in dir
-        try {
-            const files = await fs.promises.readdir(dir);
-            for (const file of files) {
-                if (file.startsWith(baseName) && (file.endsWith('.jpg') || file.endsWith('.png'))) {
-                    await fs.promises.unlink(path.join(dir, file));
+        // Helper to delete matching images in a directory
+        const deleteMatchingImagesInDir = async (targetDir) => {
+            if (!targetDir) return;
+            try {
+                const files = await fs.promises.readdir(targetDir);
+                for (const file of files) {
+                    const isImg = file.endsWith('.jpg') || file.endsWith('.png');
+                    if (isImg && (file.startsWith(baseName) || (folderName && file.startsWith(folderName)))) {
+                        try {
+                            await fs.promises.unlink(path.join(targetDir, file));
+                        } catch (e) { /* ignore */ }
+                    }
                 }
-            }
-        } catch (e) { /* ignore */ }
+            } catch (e) { /* ignore */ }
+        };
+
+        // Delete associated screenshots/prints starting with baseName or folderName in dir
+        await deleteMatchingImagesInDir(dir);
+
+        // Delete associated screenshots/prints in outputDir/screenshots
+        const effectiveOutputDir = outputDir || path.dirname(dir);
+        if (effectiveOutputDir) {
+            await deleteMatchingImagesInDir(path.join(effectiveOutputDir, 'screenshots'));
+        }
 
         return { success: true };
     } catch (error) {
@@ -227,6 +215,7 @@ export async function archiveRecordingsAsync(outputDir, archivePath, olderThanDa
             const fullPath = path.join(currentPath, item.name);
 
             if (item.isDirectory()) {
+                if (item.name === 'screenshots') continue;
                 await archiveDir(fullPath, path.join(relativePath, item.name));
                 try {
                     const remaining = await fs.promises.readdir(fullPath);
@@ -270,7 +259,7 @@ export async function reorganizeFilesAsync(outputDir, pathTemplate, resolveTempl
             const fullPath = path.join(currentPath, item.name);
 
             if (item.isDirectory()) {
-                if (item.name === 'archive') continue;
+                if (item.name === 'archive' || item.name === 'screenshots') continue;
                 await scanAndMove(fullPath);
                 try {
                     const remaining = await fs.promises.readdir(fullPath);
@@ -396,8 +385,16 @@ export async function renameRecordingAsync(outputDir, oldFilePath, newTitle) {
         }
 
         metadata.title = cleanTitle;
-        if (metadata.folderName && metadata.folderName.startsWith(oldBaseName)) {
-            metadata.folderName = metadata.folderName.replace(oldBaseName, finalBaseName);
+        const oldFolderName = metadata.folderName;
+        let newFolderName = finalBaseName;
+        if (oldFolderName) {
+            const folderTsMatch = oldFolderName.match(/^(\d{8}_\d{4,6}|\d{4}-\d{2}-\d{2}[_T-]?\d{0,6}|\d{13,14})(_|$)/);
+            if (folderTsMatch) {
+                newFolderName = `${folderTsMatch[1]}_${safeTitle}`;
+            }
+            metadata.folderName = newFolderName;
+        } else {
+            metadata.folderName = finalBaseName;
         }
 
         // 2. Se o nome da base mudou, renomear arquivos físicos
@@ -433,20 +430,38 @@ export async function renameRecordingAsync(outputDir, oldFilePath, newTitle) {
             }
             await generateOrUpdateMarkdownSidecar(newMdPath, metadata);
 
-            // Renomeia prints/screenshots associados
-            try {
-                const dirFiles = await fs.promises.readdir(dir);
-                for (const file of dirFiles) {
-                    if (file.startsWith(oldBaseName) && (file.endsWith('.jpg') || file.endsWith('.png'))) {
-                        const oldImgPath = path.join(dir, file);
-                        const newImgName = file.replace(oldBaseName, finalBaseName);
-                        const newImgPath = path.join(dir, newImgName);
-                        try {
-                            await fs.promises.rename(oldImgPath, newImgPath);
-                        } catch (e) { /* ignore */ }
+            // Renomeia prints/screenshots associados no diretório da gravação e na pasta única screenshots/
+            const renameMatchingImagesInDir = async (targetDir) => {
+                if (!targetDir) return;
+                try {
+                    await fs.promises.access(targetDir);
+                    const dirFiles = await fs.promises.readdir(targetDir);
+                    for (const file of dirFiles) {
+                        const isImg = file.endsWith('.jpg') || file.endsWith('.png');
+                        if (!isImg) continue;
+
+                        let newImgName = null;
+                        if (file.startsWith(oldBaseName)) {
+                            newImgName = file.replace(oldBaseName, finalBaseName);
+                        } else if (oldFolderName && file.startsWith(oldFolderName)) {
+                            newImgName = file.replace(oldFolderName, newFolderName);
+                        }
+
+                        if (newImgName && newImgName !== file) {
+                            const oldImgPath = path.join(targetDir, file);
+                            const newImgPath = path.join(targetDir, newImgName);
+                            try {
+                                await fs.promises.rename(oldImgPath, newImgPath);
+                            } catch (e) { /* ignore */ }
+                        }
                     }
-                }
-            } catch (e) { /* ignore */ }
+                } catch (e) { /* ignore */ }
+            };
+
+            await renameMatchingImagesInDir(dir);
+            if (outputDir) {
+                await renameMatchingImagesInDir(path.join(outputDir, 'screenshots'));
+            }
         } else {
             // Mesma base de arquivo, apenas atualiza .json e .md
             await fs.promises.writeFile(newJsonPath, JSON.stringify(metadata, null, 2), 'utf8');

@@ -1,7 +1,7 @@
 import { getAudioInputDevices, createMixedAudioStream } from './src/renderer/audioDeviceManager.js';
 import { openAudioRecording, stopPlaybackAudio, isPlaybackActive, isPlaybackPaused, getPlaybackFrequencyData } from './src/renderer/audioPlayer.js';
 import { initLibraryManager, renderLibraryUI, updateLibraryPlayingState } from './src/renderer/libraryManager.js';
-import { openTagEditorModal, getTagColor } from './src/renderer/tagEditor.js';
+import { openTagEditorModal, closeTagEditorModal, getTagColor } from './src/renderer/tagEditor.js';
 import { AudioVisualizer } from './src/renderer/audioVisualizer.js';
 import { VideoCompositor } from './src/renderer/videoCompositor.js';
 import { themeManager } from './src/renderer/themeManager.js';
@@ -173,9 +173,25 @@ async function init() {
     pauseBtn.addEventListener('click', () => togglePause());
 
     libraryBtn.addEventListener('click', () => toggleLibrary());
-    closeLibraryBtn.addEventListener('click', () => libraryPanel.classList.remove('active'));
+    closeLibraryBtn.addEventListener('click', () => closeLibrary());
     openFolderBtn.addEventListener('click', () => window.electronAPI.openOutputDirectory());
     document.getElementById('openLibraryFolderBtn')?.addEventListener('click', () => window.electronAPI.openOutputDirectory());
+
+    // Tecla ESC para fechar modal de tags ou barra lateral da biblioteca
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const tagEditorBackdrop = document.getElementById('tagEditorBackdrop');
+            if (tagEditorBackdrop && !tagEditorBackdrop.classList.contains('hidden')) {
+                closeTagEditorModal();
+                return;
+            }
+
+            if (libraryPanel && libraryPanel.classList.contains('active')) {
+                closeLibrary();
+                return;
+            }
+        }
+    });
 
     if (toggleActiveTagsBtn) {
         toggleActiveTagsBtn.addEventListener('click', () => toggleActiveTagsDrawer());
@@ -244,7 +260,7 @@ async function init() {
     });
 
     window.electronAPI.onConfigUpdated((newConfig) => {
-        config = newConfig;
+        config = { ...config, ...newConfig };
         if (config.outputDirectory) {
             savePathDisplay.textContent = config.outputDirectory;
             configAlert.classList.add('hidden');
@@ -296,7 +312,10 @@ async function init() {
     
     titleInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') exitEditMode(true);
-        if (e.key === 'Escape') exitEditMode(false);
+        if (e.key === 'Escape') {
+            e.stopPropagation();
+            exitEditMode(false);
+        }
     });
     titleInput.addEventListener('blur', () => exitEditMode(true));
 
@@ -365,6 +384,12 @@ function exitEditMode(save) {
     titleInput.classList.add('hidden');
     meetingTitle.classList.remove('hidden');
     editTitleBtn.classList.remove('hidden');
+}
+
+function closeLibrary() {
+    if (libraryPanel && libraryPanel.classList.contains('active')) {
+        libraryPanel.classList.remove('active');
+    }
 }
 
 async function toggleLibrary() {
@@ -872,7 +897,7 @@ function checkSilenceAndAutoStop() {
     if (avg > 1.5) {
         silenceStartTime = Date.now();
     } else {
-        const silenceLimitMinutes = config.autoStopSilenceMinutes !== undefined ? parseFloat(config.autoStopSilenceMinutes) : 1;
+        const silenceLimitMinutes = config.autoStopSilenceMinutes !== undefined ? parseFloat(config.autoStopSilenceMinutes) : 5;
         if (silenceLimitMinutes > 0 && silenceStartTime) {
             const silentMs = Date.now() - silenceStartTime;
             const limitMs = silenceLimitMinutes * 60 * 1000;
