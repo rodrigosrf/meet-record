@@ -9,6 +9,7 @@ import { generateOrUpdateMarkdownSidecar } from './src/main/markdownService.js';
 import { 
     getLibraryVideosAsync, 
     getRecordingThumbnailAsync, 
+    getRecordingScreenshotsAsync,
     deleteRecordingAsync, 
     archiveRecordingsAsync, 
     reorganizeFilesAsync,
@@ -386,6 +387,11 @@ ipcMain.handle('rename-recording', async (event, { filePath, newTitle }) => {
 ipcMain.handle('get-recording-thumbnail', async (event, folderName, recPath) => {
     const outputDir = store.get('outputDirectory');
     return await getRecordingThumbnailAsync(outputDir, folderName, recPath);
+});
+
+ipcMain.handle('get-recording-screenshots', async (event, folderName, recPath) => {
+    const outputDir = store.get('outputDirectory');
+    return await getRecordingScreenshotsAsync(outputDir, folderName, recPath);
 });
 
 ipcMain.handle('get-library-videos', async () => {

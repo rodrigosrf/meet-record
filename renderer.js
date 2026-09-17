@@ -1,6 +1,7 @@
 import { getAudioInputDevices, createMixedAudioStream } from './src/renderer/audioDeviceManager.js';
 import { openAudioRecording, stopPlaybackAudio, isPlaybackActive, isPlaybackPaused, getPlaybackFrequencyData } from './src/renderer/audioPlayer.js';
-import { initLibraryManager, renderLibraryUI, updateLibraryPlayingState } from './src/renderer/libraryManager.js';
+import { initLibraryManager, renderLibraryUI, updateLibraryPlayingState, getAllVideos } from './src/renderer/libraryManager.js';
+import { openScreenshotGallery } from './src/renderer/screenshotGallery.js';
 import { openTagEditorModal, closeTagEditorModal, getTagColor } from './src/renderer/tagEditor.js';
 import { AudioVisualizer } from './src/renderer/audioVisualizer.js';
 import { VideoCompositor } from './src/renderer/videoCompositor.js';
@@ -1163,6 +1164,26 @@ async function openRecording(filePath) {
     const fileName = filePath.split(/[\\/]/).pop();
     meetingTitle.textContent = fileName || "Modo Player";
 
+    // Setup prints button in player
+    const playerPrintsBtn = document.getElementById('playerPrintsBtn');
+    const playerPrintsCount = document.getElementById('playerPrintsCount');
+    if (playerPrintsBtn) {
+        const videos = getAllVideos() || [];
+        const recObj = videos.find(v => v.path === filePath) || { path: filePath, name: fileName, metadata: {} };
+        const folderName = recObj.metadata?.folderName || '';
+        window.electronAPI.getRecordingScreenshots(folderName, filePath).then(screenshots => {
+            if (screenshots && screenshots.length > 0) {
+                playerPrintsBtn.classList.remove('hidden');
+                if (playerPrintsCount) playerPrintsCount.textContent = `Prints (${screenshots.length})`;
+                playerPrintsBtn.onclick = () => openScreenshotGallery(recObj);
+            } else {
+                playerPrintsBtn.classList.add('hidden');
+            }
+        }).catch(() => {
+            playerPrintsBtn.classList.add('hidden');
+        });
+    }
+
     openAudioRecording(filePath, {
         onStateChange: (state) => {
             updateLibraryPlayingState(filePath, state);
@@ -1191,6 +1212,8 @@ async function openRecording(filePath) {
 function updatePlaybackControlsUI(active) {
     const playbackControls = document.getElementById('playbackControls');
     const cardControls = document.getElementById('cardControls');
+    const playerPrintsBtn = document.getElementById('playerPrintsBtn');
+
     if (playbackControls && cardControls) {
         if (active) {
             playbackControls.classList.remove('hidden');
@@ -1202,6 +1225,7 @@ function updatePlaybackControlsUI(active) {
             }
         } else {
             playbackControls.classList.add('hidden');
+            if (playerPrintsBtn) playerPrintsBtn.classList.add('hidden');
             cardControls.classList.remove('hidden');
             mainCard.classList.remove('playing');
             if (statusDot) {

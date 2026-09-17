@@ -43,6 +43,7 @@ meet-record/
 │       ├── 📄 audioVisualizer.js    # Engine de equalizador High-DPI (Espectro, Ondas, LED, Hélice, Elétrico, Aurora, Plasma, Prisma)
 │       ├── 📄 videoCompositor.js    # Engine de efeitos em tempo real (Spotlight Halo, Click Ripples, Privacy Shield)
 │       ├── 📄 libraryManager.js     # Renderização, filtragem e ordenação da biblioteca de reuniões
+│       ├── 📄 screenshotGallery.js  # Galeria modal e visualizador HD de prints vinculados às gravações
 │       ├── 📄 themeManager.js       # Gerenciamento de 10 temas visuais e Iluminação Reativa Ambiente (Ambient Voice Glow)
 │       └── 📄 tagEditor.js          # Modal e editor de tags/categorias para reuniões salvas
 ```
@@ -81,6 +82,7 @@ Para evitar busca no código, aqui estão os principais canais expostos em `wind
 | `no-meeting-detected` | `on` | Main -> Renderer | Notifica término/ausência de reuniões |
 | `save-file` | `invoke` | Renderer -> Main | Envia os blobs gravados para salvamento no sistema de arquivos |
 | `get-library-videos` | `invoke` | Renderer -> Main | Retorna a lista de gravações salvas na pasta configurada |
+| `get-recording-screenshots` | `invoke` | Renderer -> Main | Retorna lista estruturada de capturas de tela/prints de uma gravação |
 | `show-overlay` / `hide-overlay` | `send` | Renderer -> Main | Exibe ou oculta o widget de overlay |
 | `overlay-update` / `sync-overlay` | `on`/`send` | Bidirecional | Sincroniza estado de gravação, timer, volume e título entre Main e Overlay |
 | `get-organization-config` / `update-organization-config` | `invoke` | Renderer -> Main | Gerencia templates de organização de arquivos |
@@ -126,7 +128,7 @@ Ao modificar uma funcionalidade específica, consulte este guia antes de ler os 
 *   **Ajustar conversão de áudio, geração de .md ou execução do FFmpeg**:
     👉 Editar [src/main/ffmpegService.js](file:///d:/Dev/meet-record/src/main/ffmpegService.js) e [src/main/markdownService.js](file:///d:/Dev/meet-record/src/main/markdownService.js) (arquivos `.md` sidecar sincronizam tags e notas da reunião).
 *   **Modificar a lista de gravações, biblioteca, capas/thumbnails e capturas de tela**:
-    👉 Editar [src/main/libraryService.js](file:///d:/Dev/meet-record/src/main/libraryService.js) e [src/renderer/libraryManager.js](file:///d:/Dev/meet-record/src/renderer/libraryManager.js). As capturas de tela durante as gravações (prints manuais e capas) são salvas em pasta única fixa `<outputDirectory>/screenshots/`, independente do template por data das gravações. Ao renomear/excluir gravações, as imagens vinculadas em `screenshots/` são sincronizadas.
+    👉 Editar [src/main/libraryService.js](file:///d:/Dev/meet-record/src/main/libraryService.js), [src/renderer/libraryManager.js](file:///d:/Dev/meet-record/src/renderer/libraryManager.js) e [src/renderer/screenshotGallery.js](file:///d:/Dev/meet-record/src/renderer/screenshotGallery.js). As capturas de tela (prints manuais e capas) são salvas e lidas estritamente da pasta única fixa `<outputDirectory>/screenshots/` (sem buscas em pastas de gravações legadas). Ao renomear/excluir gravações, as imagens vinculadas em `screenshots/` são sincronizadas.
 *   **Ajustar a captura de áudio/vídeo WebRTC, visualizador contínuo ou detecção de silêncio**:
     👉 Editar [renderer.js](file:///d:/Dev/meet-record/renderer.js), [src/renderer/audioVisualizer.js](file:///d:/Dev/meet-record/src/renderer/audioVisualizer.js) e [src/renderer/audioDeviceManager.js](file:///d:/Dev/meet-record/src/renderer/audioDeviceManager.js).
 *   **Modificar o Overlay flutuante**:

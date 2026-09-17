@@ -1,7 +1,9 @@
 import { getTagColor, openTagEditorModal } from './tagEditor.js';
 import { getCurrentlyPlayingPath, getPlaybackState, togglePlayPauseAudio, updatePlayingTrackPath } from './audioPlayer.js';
+import { openScreenshotGallery } from './screenshotGallery.js';
 
 let allVideos = [];
+export function getAllVideos() { return allVideos; }
 let tagCategories = [];
 let searchQuery = '';
 let tagFilterQuery = 'all';
@@ -186,6 +188,7 @@ export async function renderLibraryUI(callbacks = {}, skipFetch = false) {
             const tags = (rec.metadata && Array.isArray(rec.metadata.tags)) ? rec.metadata.tags : [];
             const durationStr = formatDuration(rec.metadata?.duration);
             const sizeStr = formatFileSize(rec.size);
+            const screenshotCount = (rec.metadata && typeof rec.metadata.screenshotCount === 'number') ? rec.metadata.screenshotCount : 0;
 
             const isThisPlaying = (currentPlaying === rec.path && playbackState === 'playing');
             const isThisPaused = (currentPlaying === rec.path && playbackState === 'paused');
@@ -195,6 +198,12 @@ export async function renderLibraryUI(callbacks = {}, skipFetch = false) {
             item.innerHTML = `
                 <div class="lib-item-thumbnail" data-action="play-card" title="Clique para ${buttonText.toLowerCase()}">
                     ${thumbnailImgHtml}
+                    ${screenshotCount > 0 ? `
+                        <div class="lib-item-print-pill" data-action="view-prints" title="${screenshotCount} ${screenshotCount === 1 ? 'captura vinculada' : 'capturas vinculadas'} (Clique para consultar)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                            <span>${screenshotCount}</span>
+                        </div>
+                    ` : ''}
                     <div class="thumb-play-overlay">
                         <div class="thumb-play-circle ${isThisPlaying ? 'is-playing' : ''}">
                             ${isThisPlaying ? `
@@ -261,6 +270,7 @@ export async function renderLibraryUI(callbacks = {}, skipFetch = false) {
                                     <line x1="12" y1="13" x2="15" y2="15"></line>
                                     <line x1="10" y1="2" x2="14" y2="2"></line>
                                     <line x1="12" y1="2" x2="12" y2="5"></line>
+                                    <line x1="12" y1="2" x2="12" y2="5"></line>
                                 </svg>
                                 <span>${durationStr}</span>
                             </span>
@@ -278,10 +288,12 @@ export async function renderLibraryUI(callbacks = {}, skipFetch = false) {
 
                 <div class="lib-item-actions">
                     <div class="lib-item-actions-left">
-                        <button class="btn-action-tag" data-action="edit-tags" title="Gerenciar Tags">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
-                            <span>Tags${tags.length > 0 ? ` (${tags.length})` : ''}</span>
-                        </button>
+                        ${screenshotCount > 0 ? `
+                            <button class="btn-action-prints" data-action="view-prints" title="Consultar ${screenshotCount} capturas desta reunião">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                                <span>Prints (${screenshotCount})</span>
+                            </button>
+                        ` : ''}
                         <button class="btn-small btn-folder-explorer" data-action="open-folder" title="Abrir pasta no Explorer">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                         </button>
@@ -310,6 +322,13 @@ export async function renderLibraryUI(callbacks = {}, skipFetch = false) {
                 window.electronAPI.openFileLocation(rec.path);
             });
 
+            item.querySelectorAll('[data-action="view-prints"]').forEach(el => {
+                el.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openScreenshotGallery(rec);
+                });
+            });
+
             item.querySelector('[data-action="delete"]')?.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (currentCallbacks.onDeleteRecording) {
@@ -332,7 +351,6 @@ export async function renderLibraryUI(callbacks = {}, skipFetch = false) {
                 });
             };
 
-            item.querySelector('[data-action="edit-tags"]')?.addEventListener('click', openTagEditorHandler);
             item.querySelector('[data-action="add-tag"]')?.addEventListener('click', openTagEditorHandler);
 
             // Favorite Toggle Handler

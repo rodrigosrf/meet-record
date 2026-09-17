@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onConfigUpdated: (callback) => ipcRenderer.on('config-updated', (event, config) => callback(config)),
     getLibraryVideos: () => ipcRenderer.invoke('get-library-videos'),
     getRecordingThumbnail: (folderName, recPath) => ipcRenderer.invoke('get-recording-thumbnail', folderName, recPath),
+    getRecordingScreenshots: (folderName, recPath) => ipcRenderer.invoke('get-recording-screenshots', folderName, recPath),
     updateConfig: (config) => ipcRenderer.invoke('update-config', config),
     openOutputDirectory: () => ipcRenderer.invoke('open-output-directory'),
     openFile: (filePath) => ipcRenderer.invoke('open-file', filePath),

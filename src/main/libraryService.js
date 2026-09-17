@@ -13,6 +13,16 @@ export async function getLibraryVideosAsync(outputDir) {
 
     const recordings = [];
 
+    // Pre-read screenshots directory to calculate screenshot count efficiently
+    let screenshotsFiles = [];
+    try {
+        const sDir = path.join(outputDir, 'screenshots');
+        await fs.promises.access(sDir);
+        screenshotsFiles = await fs.promises.readdir(sDir);
+    } catch (e) {
+        screenshotsFiles = [];
+    }
+
     async function scanDir(currentPath) {
         let entries;
         try {
@@ -37,6 +47,16 @@ export async function getLibraryVideosAsync(outputDir) {
                     metadata = JSON.parse(metaContent);
                 } catch (e) { /* ignore missing metadata */ }
 
+                // Count linked screenshots strictly in outputDir/screenshots
+                const fName = metadata.folderName || baseName;
+                let count = 0;
+                for (const sf of screenshotsFiles) {
+                    if ((sf.endsWith('.jpg') || sf.endsWith('.png')) && (sf.startsWith(fName) || sf.startsWith(baseName))) {
+                        count++;
+                    }
+                }
+                metadata.screenshotCount = count;
+
                 try {
                     const stat = await fs.promises.stat(fullPath);
                     recordings.push({
@@ -60,77 +80,99 @@ export async function getLibraryVideosAsync(outputDir) {
     }
 }
 
-export async function getRecordingThumbnailAsync(outputDir, folderName, recPath) {
-    if (!outputDir || !folderName) return null;
+export async function getRecordingScreenshotsAsync(outputDir, folderName, recPath) {
+    if (!outputDir) return [];
 
-    const findImageInDir = async (dirPath) => {
-        try {
-            await fs.promises.access(dirPath);
-            const files = await fs.promises.readdir(dirPath);
-            const matchingFiles = files.filter(f => (f.endsWith('.jpg') || f.endsWith('.png')) && f.startsWith(folderName));
-
-            if (matchingFiles.length === 0) return null;
-            matchingFiles.sort();
-
-            let selectedImage = null;
-            let largestImage = null;
-            let maxSize = 0;
-
-            for (const file of matchingFiles) {
-                const fullPath = path.join(dirPath, file);
-                const stat = await fs.promises.stat(fullPath);
-                if (stat.size > maxSize) {
-                    maxSize = stat.size;
-                    largestImage = file;
-                }
-                if (!selectedImage && stat.size > 100000) {
-                    selectedImage = file;
-                }
-            }
-
-            const finalImage = selectedImage || largestImage;
-            if (finalImage) {
-                const fullPath = path.join(dirPath, finalImage);
-                const buffer = await fs.promises.readFile(fullPath);
-                return { success: true, buffer: new Uint8Array(buffer) };
-            }
-        } catch (e) {
-            return null;
-        }
-        return null;
-    };
-
-    // 1. Try screenshots directory in outputDir
+    const baseName = recPath ? path.parse(recPath).name : folderName;
+    const targetPrefixes = Array.from(new Set([folderName, baseName].filter(Boolean)));
     const screenshotsDir = path.join(outputDir, 'screenshots');
-    const screenResult = await findImageInDir(screenshotsDir);
-    if (screenResult) return screenResult;
+    const screenshots = [];
 
-    // 2. Try directory of recPath if provided (for legacy recordings)
-    if (recPath) {
-        const recDir = path.dirname(recPath);
-        const result = await findImageInDir(recDir);
-        if (result) return result;
+    try {
+        await fs.promises.access(screenshotsDir);
+        const files = await fs.promises.readdir(screenshotsDir);
+
+        for (const file of files) {
+            if (!file.endsWith('.jpg') && !file.endsWith('.png')) continue;
+
+            const matches = targetPrefixes.some(prefix => file.startsWith(prefix));
+            if (!matches) continue;
+
+            const filePath = path.join(screenshotsDir, file);
+            try {
+                const stat = await fs.promises.stat(filePath);
+                const buf = await fs.promises.readFile(filePath);
+                const isCover = file.includes('_cover');
+
+                screenshots.push({
+                    name: file,
+                    path: filePath,
+                    size: stat.size,
+                    date: stat.mtime,
+                    type: isCover ? 'cover' : 'manual',
+                    buffer: new Uint8Array(buf)
+                });
+            } catch (e) { /* ignore read failure */ }
+        }
+    } catch (e) {
+        return [];
     }
 
-    // 3. Recursive scan in outputDir
-    async function scanForImage(currentPath) {
-        try {
-            const entries = await fs.promises.readdir(currentPath, { withFileTypes: true });
-            for (const entry of entries) {
-                const fullPath = path.join(currentPath, entry.name);
-                if (entry.isDirectory()) {
-                    if (entry.name === 'archive' || entry.name === 'screenshots') continue;
-                    const res = await findImageInDir(fullPath);
-                    if (res) return res;
-                    const subRes = await scanForImage(fullPath);
-                    if (subRes) return subRes;
-                }
+    // Sort: cover first, then chronologically by creation/mtime
+    screenshots.sort((a, b) => {
+        if (a.type === 'cover' && b.type !== 'cover') return -1;
+        if (b.type === 'cover' && a.type !== 'cover') return 1;
+        return new Date(a.date) - new Date(b.date);
+    });
+
+    return screenshots;
+}
+
+export async function getRecordingThumbnailAsync(outputDir, folderName, recPath) {
+    if (!outputDir) return null;
+
+    const baseName = recPath ? path.parse(recPath).name : folderName;
+    const targetPrefixes = Array.from(new Set([folderName, baseName].filter(Boolean)));
+    const screenshotsDir = path.join(outputDir, 'screenshots');
+
+    try {
+        await fs.promises.access(screenshotsDir);
+        const files = await fs.promises.readdir(screenshotsDir);
+        const matchingFiles = files.filter(f => 
+            (f.endsWith('.jpg') || f.endsWith('.png')) && 
+            targetPrefixes.some(prefix => f.startsWith(prefix))
+        );
+
+        if (matchingFiles.length === 0) return null;
+        matchingFiles.sort();
+
+        let selectedImage = null;
+        let largestImage = null;
+        let maxSize = 0;
+
+        for (const file of matchingFiles) {
+            const fullPath = path.join(screenshotsDir, file);
+            const stat = await fs.promises.stat(fullPath);
+            if (stat.size > maxSize) {
+                maxSize = stat.size;
+                largestImage = file;
             }
-        } catch (e) {}
+            if (!selectedImage && stat.size > 100000) {
+                selectedImage = file;
+            }
+        }
+
+        const finalImage = selectedImage || largestImage;
+        if (finalImage) {
+            const fullPath = path.join(screenshotsDir, finalImage);
+            const buffer = await fs.promises.readFile(fullPath);
+            return { success: true, buffer: new Uint8Array(buffer) };
+        }
+    } catch (e) {
         return null;
     }
 
-    return await scanForImage(outputDir);
+    return null;
 }
 
 export async function deleteRecordingAsync(filePath, outputDir) {
