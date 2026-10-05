@@ -182,6 +182,24 @@
                             </select>
                         </div>
                     </div>
+
+                    <!-- Seletor Dinâmico de Reunião / Janela Alvo -->
+                    <div class="target-meeting-selector-container" id="targetMeetingSelectorContainer">
+                        <div class="target-meeting-header">
+                            <span class="target-meeting-label">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                                <span>Janela / Reunião Alvo:</span>
+                            </span>
+                            <span id="detectedMeetingsBadge" class="detected-meetings-badge">Aguardando detecção...</span>
+                        </div>
+                        <div class="target-meeting-select-wrapper">
+                            <select id="targetMeetingSelect" class="target-meeting-dropdown" title="Selecione a reunião que deseja gravar">
+                                <option value="auto">🎯 [Automático] Detectar Reunião em Foco</option>
+                                <option value="screen">🖥️ Tela Inteira</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <button id="startBtn" class="btn-primary" style="width: 100%;">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3" fill="currentColor"></circle></svg>
                         <span>Iniciar Gravação Manual</span>

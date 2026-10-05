@@ -59,9 +59,9 @@ meet-record/
 4. `main.js` consome o buffer e dispara eventos `meeting-detected` ou `no-meeting-detected` para o Renderer via `webContents.send`.
 
 ### B. Ciclo de Gravação de Áudio/Vídeo com Efeitos
-1. **Início**: Acionado automaticamente pela detecção ou manualmente via UI/Overlay (`start-manual-recording`).
+1. **Início e Seleção de Alvo**: Acionado automaticamente pela detecção inteligente (priorizando chamada ativa/focada sobre chamadas em espera `isHold`) ou manualmente via UI com o seletor dinâmico de reunião/janela (`#targetMeetingSelect`) que vincula o `handle` exato do SO.
 2. **Captura & Composição**: O Renderer (`renderer.js`) captura áudio/vídeo e aplica o `videoCompositor.js` (se configurado) para renderizar Spotlight do cursor, ripples de clique e desfoque de privacidade a 60 FPS.
-3. **Detecção de Silêncio e Encerramento**: O Renderer monitora o som de saída do sistema (loopback, ignorando microfone) via `AudioContext` e `AnalyserNode`, filtrando a banda de voz (bins 2-32) com histerese contra ruídos espúrios. Se houver ausência de voz por `autoStopSilenceMinutes`, dispara o auto-stop. Se uma reunião do Teams for fechada, pergunta ao usuário via diálogo se deseja finalizar a gravação (`ask-stop-recording`).
+3. **Detecção de Silêncio e Encerramento**: O Renderer monitora o som de saída do sistema (loopback, ignorando microfone) via `AudioContext` e `AnalyserNode`, filtrando a banda de voz (bins 2-32) com histerese contra ruídos espúrios. Se houver ausência de voz por `autoStopSilenceMinutes`, dispara o auto-stop. Se a reunião selecionada do Teams for encerrada, pergunta ao usuário via diálogo se deseja finalizar a gravação (`ask-stop-recording`).
 4. **Overlay Reativo**: O nível `vuLevel` é transmitido para `overlay.js` via IPC para acionar o Voice Activity Ambient Glow.
 5. **Finalização**: Os Chunks gravados via `MediaRecorder` são enviados para o Main Process (`save-file`).
 6. **Pós-processamento**: `main.js` salva os arquivos e chama `ffmpegService.js` para converter o áudio para MP3 e salvar metadados.

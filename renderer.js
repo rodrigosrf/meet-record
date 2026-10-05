@@ -36,6 +36,9 @@ const autoRecordCheckbox = document.getElementById('autoRecordCheckbox');
 const titleInput = document.getElementById('titleInput');
 const editTitleBtn = document.getElementById('editTitleBtn');
 const audioDeviceSelect = document.getElementById('audioDeviceSelect');
+const targetMeetingSelect = document.getElementById('targetMeetingSelect');
+const detectedMeetingsBadge = document.getElementById('detectedMeetingsBadge');
+let availableMeetingWindows = [];
 
 // Active recording tags elements
 const activeRecTagsList = document.getElementById('activeRecTagsList');
@@ -204,6 +207,24 @@ async function init() {
     if (addActiveRecTagBtn) {
         addActiveRecTagBtn.addEventListener('click', () => addActiveTagFromInput());
     }
+    if (targetMeetingSelect) {
+        targetMeetingSelect.addEventListener('change', () => {
+            if (!isRecording) {
+                const val = targetMeetingSelect.value;
+                if (val.startsWith('handle_')) {
+                    const h = val.replace('handle_', '');
+                    const m = availableMeetingWindows.find(win => win.handle === h);
+                    if (m && !isTitleManuallyEdited) {
+                        currentMeetingName = m.title;
+                        meetingTitle.textContent = m.title;
+                    }
+                } else if (val === 'screen' && !isTitleManuallyEdited) {
+                    meetingTitle.textContent = "Gravação de Tela";
+                }
+            }
+        });
+    }
+
     if (activeRecTagInput) {
         activeRecTagInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ',') {
@@ -216,6 +237,7 @@ async function init() {
     window.electronAPI.onMeetingDetected(async (meetings) => {
         const now = Date.now();
         lastDetectedMeetings = meetings;
+        updateMeetingDropdown(meetings);
         
         const activeMeetingObj = meetings.find(m => m.handle === currentMeetingHandle) || meetings[0];
         isCurrentMeetingFocused = activeMeetingObj ? !!activeMeetingObj.isFocused : false;
@@ -244,8 +266,24 @@ async function init() {
             
             const availableMeetings = meetings.filter(m => !manuallyStoppedMeetings.has(m.handle));
             if (availableMeetings.length > 0) {
-                const bestMatch = availableMeetings.find(m => m.title.includes('Reuni') || m.title.includes('Meeting')) || availableMeetings[0];
-                handleMeetingDetected(bestMatch.title, bestMatch.handle);
+                // Verificar se o usuário selecionou uma janela específica no dropdown
+                let chosenMeeting = null;
+                if (targetMeetingSelect && targetMeetingSelect.value.startsWith('handle_')) {
+                    const chosenHandle = targetMeetingSelect.value.replace('handle_', '');
+                    chosenMeeting = availableMeetings.find(m => m.handle === chosenHandle);
+                }
+
+                // Se em modo automático: prioriza chamada ativa (!isHold) e em foco
+                if (!chosenMeeting) {
+                    chosenMeeting = availableMeetings.find(m => !m.isHold && m.isFocused)
+                        || availableMeetings.find(m => !m.isHold)
+                        || availableMeetings.find(m => m.title.includes('Reuni') || m.title.includes('Meeting'))
+                        || availableMeetings[0];
+                }
+
+                if (chosenMeeting) {
+                    handleMeetingDetected(chosenMeeting.title, chosenMeeting.handle);
+                }
             }
         } else {
             // Se estamos gravando e a reunião ativa foi encerrada
@@ -264,6 +302,8 @@ async function init() {
     });
 
     window.electronAPI.onNoMeetingDetected(() => {
+        lastDetectedMeetings = [];
+        updateMeetingDropdown([]);
         if (isRecording) {
             if (currentMeetingHandle || /teams/i.test(currentMeetingName)) {
                 promptTeamsMeetingEnded(currentMeetingName);
@@ -415,6 +455,65 @@ async function toggleLibrary() {
     }
 }
 
+function updateMeetingDropdown(meetings) {
+    availableMeetingWindows = Array.isArray(meetings) ? meetings : [];
+    
+    if (detectedMeetingsBadge) {
+        if (availableMeetingWindows.length === 0) {
+            detectedMeetingsBadge.textContent = "Nenhuma janela do Teams";
+            detectedMeetingsBadge.classList.remove('active-count');
+        } else {
+            const activeCount = availableMeetingWindows.filter(m => !m.isHold).length;
+            const holdCount = availableMeetingWindows.filter(m => m.isHold).length;
+            let text = `${availableMeetingWindows.length} ${availableMeetingWindows.length === 1 ? 'janela' : 'janelas'}`;
+            if (holdCount > 0) {
+                text += ` (${activeCount} ativa, ${holdCount} em espera)`;
+            }
+            detectedMeetingsBadge.textContent = text;
+            detectedMeetingsBadge.classList.add('active-count');
+        }
+    }
+
+    if (!targetMeetingSelect) return;
+
+    const previousSelectedValue = targetMeetingSelect.value;
+    targetMeetingSelect.innerHTML = '';
+
+    // Opção 1: Automático Inteligente
+    const autoOption = document.createElement('option');
+    autoOption.value = 'auto';
+    autoOption.textContent = '🎯 [Automático] Reunião em Foco / Ativa';
+    targetMeetingSelect.appendChild(autoOption);
+
+    // Listar janelas encontradas
+    availableMeetingWindows.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = `handle_${m.handle}`;
+        let statusPrefix = '👥 [Ativa]';
+        if (m.isHold) {
+            statusPrefix = '⏸️ [Em Espera]';
+        } else if (m.isFocused) {
+            statusPrefix = '🟢 [Em Foco]';
+        }
+        opt.textContent = `${statusPrefix} ${m.title} (ID: ${m.handle})`;
+        targetMeetingSelect.appendChild(opt);
+    });
+
+    // Opção Tela Inteira
+    const screenOption = document.createElement('option');
+    screenOption.value = 'screen';
+    screenOption.textContent = '🖥️ Gravação Geral da Tela';
+    targetMeetingSelect.appendChild(screenOption);
+
+    // Restaurar valor se ainda existir
+    const exists = Array.from(targetMeetingSelect.options).some(o => o.value === previousSelectedValue);
+    if (exists) {
+        targetMeetingSelect.value = previousSelectedValue;
+    } else {
+        targetMeetingSelect.value = 'auto';
+    }
+}
+
 async function handleManualStart() {
     if (isRecording || isStarting) return;
 
@@ -436,7 +535,69 @@ async function handleManualStart() {
     isTitleManuallyEdited = false;
     statusLabel.textContent = "Buscando Janelas...";
     const sources = await window.electronAPI.getSources();
-    
+
+    const selectedTarget = targetMeetingSelect ? targetMeetingSelect.value : 'auto';
+
+    // 1. Se o usuário selecionou uma janela específica do Teams no dropdown:
+    if (selectedTarget.startsWith('handle_')) {
+        const selectedHandle = selectedTarget.replace('handle_', '');
+        const targetMeeting = availableMeetingWindows.find(m => m.handle === selectedHandle);
+        if (targetMeeting) {
+            if (!isTitleManuallyEdited) {
+                currentMeetingName = targetMeeting.title;
+                meetingTitle.textContent = targetMeeting.title;
+            }
+            currentMeetingHandle = selectedHandle;
+
+            const source = sources.find(s => s.name === targetMeeting.title) 
+                || sources.find(s => s.name.includes(targetMeeting.title) || targetMeeting.title.includes(s.name))
+                || sources.find(s => s.name.includes('Teams'))
+                || sources[0];
+
+            if (source) {
+                startRecording(source.id, selectedHandle, hasVideo);
+                return;
+            }
+        }
+    }
+
+    // 2. Se o usuário selecionou Tela Inteira explicitamente:
+    if (selectedTarget === 'screen') {
+        const screenSource = sources.find(s => s.id.startsWith('screen:')) || sources[0];
+        if (screenSource) {
+            if (!isTitleManuallyEdited) {
+                currentMeetingName = "Gravação de Tela";
+                meetingTitle.textContent = "Gravação Manual (Tela Inteira)";
+            }
+            currentMeetingHandle = "screen_" + Date.now();
+            startRecording(screenSource.id, currentMeetingHandle, hasVideo);
+            return;
+        }
+    }
+
+    // 3. Modo Automático: prioriza reunião do Teams ativa e em foco
+    let bestMeeting = availableMeetingWindows.find(m => !m.isHold && m.isFocused)
+        || availableMeetingWindows.find(m => !m.isHold)
+        || availableMeetingWindows[0];
+
+    if (bestMeeting) {
+        if (!isTitleManuallyEdited) {
+            currentMeetingName = bestMeeting.title;
+            meetingTitle.textContent = bestMeeting.title;
+        }
+        currentMeetingHandle = bestMeeting.handle;
+
+        const source = sources.find(s => s.name === bestMeeting.title)
+            || sources.find(s => s.name.includes(bestMeeting.title) || bestMeeting.title.includes(s.name))
+            || sources.find(s => s.name.includes('Teams'));
+
+        if (source) {
+            startRecording(source.id, bestMeeting.handle, hasVideo);
+            return;
+        }
+    }
+
+    // 4. Fallback padrão: busca qualquer janela que pareça reunião
     const meetingSource = sources.find(s => {
         const name = s.name.toLowerCase();
         return name.includes('reuni') || name.includes('meeting') || name.includes('teams');
@@ -461,6 +622,9 @@ async function handleManualStart() {
         startRecording(screenSource.id, "", hasVideo);
     } else {
         statusLabel.textContent = "Nenhuma fonte encontrada";
+        isStarting = false;
+        startBtn.disabled = false;
+        startBtn.querySelector('span').textContent = "Iniciar Gravação Manual";
     }
 }
 
@@ -797,6 +961,7 @@ async function startRecording(sourceId, handle, hasVideo = false) {
         isStarting = false;
         hasAutoCoverBeenTaken = false;
         recordVideoCheckbox.disabled = true;
+        if (targetMeetingSelect) targetMeetingSelect.disabled = true;
         
         mainCard.classList.add('recording');
         statusDot.classList.add('active');
@@ -879,6 +1044,7 @@ function stopRecording(isManual = false) {
         startBtn.querySelector('span').textContent = "Iniciar Gravação Manual";
         
         recordVideoCheckbox.disabled = false;
+        if (targetMeetingSelect) targetMeetingSelect.disabled = false;
         clearInterval(timerInterval);
         if (silenceCheckInterval) {
             clearInterval(silenceCheckInterval);

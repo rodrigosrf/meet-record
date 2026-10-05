@@ -39,6 +39,7 @@ function Perform-MeetingScan {
                 [Console]::Error.WriteLine("DEBUG: Analisando processo Teams: $($process.ProcessName) - Janela: $name")
                 
                 $isMeeting = $false
+                $isHold = $false
                 
                 # Fetch targeted control elements
                 $elements = $win.FindAll([Windows.Automation.TreeScope]::Descendants, $targetControlsCondition)
@@ -58,8 +59,12 @@ function Perform-MeetingScan {
                         
                         if ($elName -eq $name) { continue }
 
-                        if ($elName -match "\b(Mudo|Mute|Microfone|Mic|Desligar|Hang up|Sair|Leave|Câmera|Camera|Ingressar|Join)\b" -or 
-                            $automationId -match "hangup|mute|microphone|camera|join-button|call-controls") {
+                        if ($elName -match "\b(Retomar|Resume|Em espera|Hold)\b" -or $automationId -match "resume|hold") {
+                            $isHold = $true
+                        }
+
+                        if ($elName -match "\b(Mudo|Mute|Microfone|Mic|Desligar|Hang up|Sair|Leave|Câmera|Camera|Ingressar|Join|Retomar|Resume)\b" -or 
+                            $automationId -match "hangup|mute|microphone|camera|join-button|call-controls|resume") {
                             
                             if ($elName -match "^(Sair|Leave)$" -or $automationId -match "hangup|leave|mute|camera|microphone|join") {
                                  [Console]::Error.WriteLine("DEBUG: Reunião CONFIRMADA por controle: '$elName' (ID: $automationId)")
@@ -79,7 +84,7 @@ function Perform-MeetingScan {
                 if ($isMeeting) {
                     $winHandle = $win.Current.NativeWindowHandle.ToString()
                     $isFocused = ($winHandle -eq $fgHandle.ToString())
-                    $results += @{ title = $name; handle = $winHandle; isFocused = $isFocused }
+                    $results += @{ title = $name; handle = $winHandle; isFocused = $isFocused; isHold = $isHold }
                 }
             }
         } catch {
