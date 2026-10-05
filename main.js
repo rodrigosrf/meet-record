@@ -299,6 +299,25 @@ ipcMain.on('open-settings', () => {
     createSettingsWindow();
 });
 
+ipcMain.handle('ask-stop-recording', async (event, { meetingTitle } = {}) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+    }
+    const result = await dialog.showMessageBox(mainWindow, {
+        type: 'question',
+        buttons: ['Finalizar Gravação', 'Continuar Gravando'],
+        defaultId: 0,
+        cancelId: 1,
+        title: 'Meet Record',
+        message: 'Reunião finalizada no Teams',
+        detail: `A janela da reunião "${meetingTitle || 'Microsoft Teams'}" foi encerrada.\n\nDeseja finalizar a gravação agora?`,
+        noLink: true
+    });
+    return result.response === 0;
+});
+
 ipcMain.handle('open-output-directory', async () => {
     const outputDir = store.get('outputDirectory');
     if (outputDir && fs.existsSync(outputDir)) {

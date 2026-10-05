@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onStartManualRecording: (callback) => ipcRenderer.on('start-manual-recording', () => callback()),
     onStopRecording: (callback) => ipcRenderer.on('stop-recording', () => callback()),
     onTriggerManualScreenshot: (callback) => ipcRenderer.on('trigger-manual-screenshot', () => callback()),
+    askStopRecording: (data) => ipcRenderer.invoke('ask-stop-recording', data),
     
     // Overlay Methods
     onOverlayUpdate: (callback) => ipcRenderer.on('overlay-update', (_event, data) => callback(data)),

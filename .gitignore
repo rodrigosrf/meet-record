@@ -50,3 +50,6 @@ desktop.ini
 .env.local
 .env.*.local
 
+
+# graphify-axet
+.graphify/

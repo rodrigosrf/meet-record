@@ -65,6 +65,10 @@ let silenceCounter = 0;
 let isAudioSilentWarningShown = false;
 let silenceStartTime = null;
 let silenceCheckInterval = null;
+let systemAudioSourceNode = null;
+let systemAudioStream = null;
+let consecutiveSpeechFrames = 0;
+let isPromptingMeetingEnd = false;
 
 let mediaRecorder;
 let recordedChunks = [];
@@ -243,20 +247,27 @@ async function init() {
                 const bestMatch = availableMeetings.find(m => m.title.includes('Reuni') || m.title.includes('Meeting')) || availableMeetings[0];
                 handleMeetingDetected(bestMatch.title, bestMatch.handle);
             }
-        } else if (!isManualRecording) {
-            const currentMeeting = meetings.find(m => m.handle === currentMeetingHandle);
-            if (!currentMeeting) {
-                stopRecording();
-            } else if (!isTitleManuallyEdited && titleInput.classList.contains('hidden') && currentMeeting.title !== currentMeetingName) {
-                currentMeetingName = currentMeeting.title;
-                meetingTitle.textContent = currentMeetingName;
+        } else {
+            // Se estamos gravando e a reunião ativa foi encerrada
+            if (currentMeetingHandle) {
+                const currentMeeting = meetings.find(m => m.handle === currentMeetingHandle);
+                if (!currentMeeting) {
+                    promptTeamsMeetingEnded(currentMeetingName);
+                } else if (!isTitleManuallyEdited && titleInput.classList.contains('hidden') && currentMeeting.title !== currentMeetingName) {
+                    currentMeetingName = currentMeeting.title;
+                    meetingTitle.textContent = currentMeetingName;
+                }
+            } else if (!isManualRecording && meetings.length === 0) {
+                promptTeamsMeetingEnded(currentMeetingName);
             }
         }
     });
 
     window.electronAPI.onNoMeetingDetected(() => {
-        if (isRecording && !isManualRecording) {
-            stopRecording();
+        if (isRecording) {
+            if (currentMeetingHandle || /teams/i.test(currentMeetingName)) {
+                promptTeamsMeetingEnded(currentMeetingName);
+            }
         }
     });
 
@@ -487,6 +498,33 @@ async function handleMeetingDetected(title, handle) {
     }
 }
 
+async function promptTeamsMeetingEnded(meetingTitle) {
+    if (isPromptingMeetingEnd || !isRecording) return;
+    isPromptingMeetingEnd = true;
+
+    try {
+        const titleToUse = meetingTitle || currentMeetingName || "Microsoft Teams";
+        console.log(`[Teams] Janela da reunião "${titleToUse}" foi encerrada. Perguntando ao usuário se deseja finalizar gravação...`);
+        
+        const shouldStop = await window.electronAPI.askStopRecording({
+            meetingTitle: titleToUse
+        });
+
+        if (shouldStop) {
+            console.log("[Teams] Usuário confirmou encerramento da gravação.");
+            stopRecording(false);
+        } else {
+            console.log("[Teams] Usuário optou por continuar a gravação.");
+            isManualRecording = true;
+            currentMeetingHandle = "";
+        }
+    } catch (err) {
+        console.error("Erro ao solicitar confirmação de encerramento:", err);
+    } finally {
+        isPromptingMeetingEnd = false;
+    }
+}
+
 async function initActiveRecordingTags() {
     activeRecordingTags = [];
     if (activeRecTagInput) activeRecTagInput.value = '';
@@ -676,19 +714,39 @@ async function startRecording(sourceId, handle, hasVideo = false) {
         }
 
         analyser = audioCtx.createAnalyser();
-        const systemAudioTracks = rawStream.getAudioTracks();
-        if (systemAudioTracks && systemAudioTracks.length > 0) {
-            const systemAudioStream = new MediaStream([systemAudioTracks[0]]);
-            const source = audioCtx.createMediaStreamSource(systemAudioStream);
-            source.connect(analyser);
-        } else {
-            const source = audioCtx.createMediaStreamSource(combinedStream);
-            source.connect(analyser);
-        }
         analyser.fftSize = 256;
         analyser.smoothingTimeConstant = 0.8;
         dataArray = new Uint8Array(analyser.frequencyBinCount);
 
+        const rawAudioTracks = rawStream.getAudioTracks();
+        if (rawAudioTracks && rawAudioTracks.length > 0) {
+            systemAudioStream = new MediaStream([rawAudioTracks[0]]);
+            systemAudioSourceNode = audioCtx.createMediaStreamSource(systemAudioStream);
+            systemAudioSourceNode.connect(analyser);
+
+            rawAudioTracks[0].onended = () => {
+                console.warn("[Áudio] Faixa de áudio do sistema foi encerrada.");
+                if (isRecording && (currentMeetingHandle || /teams/i.test(currentMeetingName))) {
+                    promptTeamsMeetingEnded(currentMeetingName);
+                }
+            };
+        } else {
+            console.warn("[Áudio] Nenhuma faixa de áudio de saída isolada capturada do sistema.");
+            systemAudioStream = null;
+            systemAudioSourceNode = null;
+        }
+
+        const rawVideoTracks = rawStream.getVideoTracks();
+        if (rawVideoTracks && rawVideoTracks.length > 0) {
+            rawVideoTracks[0].onended = () => {
+                console.warn("[Vídeo] Faixa de vídeo da janela/tela foi encerrada.");
+                if (isRecording && (currentMeetingHandle || /teams/i.test(currentMeetingName))) {
+                    promptTeamsMeetingEnded(currentMeetingName);
+                }
+            };
+        }
+
+        consecutiveSpeechFrames = 0;
         silenceCounter = 0;
         isAudioSilentWarningShown = false;
         silenceStartTime = Date.now();
@@ -827,6 +885,22 @@ function stopRecording(isManual = false) {
             silenceCheckInterval = null;
         }
         silenceStartTime = null;
+        consecutiveSpeechFrames = 0;
+        isPromptingMeetingEnd = false;
+
+        if (systemAudioSourceNode) {
+            try {
+                systemAudioSourceNode.disconnect();
+            } catch (e) { /* ignore */ }
+            systemAudioSourceNode = null;
+        }
+
+        if (systemAudioStream) {
+            try {
+                systemAudioStream.getTracks().forEach(t => t.stop());
+            } catch (e) { /* ignore */ }
+            systemAudioStream = null;
+        }
         
         const video = document.getElementById('screenshotVideo');
         if (video) {
@@ -884,20 +958,55 @@ function togglePause() {
 function checkSilenceAndAutoStop() {
     if (!isRecording || isPaused || !analyser || !dataArray) {
         silenceStartTime = Date.now();
+        consecutiveSpeechFrames = 0;
         return;
     }
 
-    analyser.getByteFrequencyData(dataArray);
+    const rawAudioTracks = systemAudioStream ? systemAudioStream.getAudioTracks() : [];
+    const isTrackDead = rawAudioTracks.length === 0 || rawAudioTracks[0].readyState === 'ended' || rawAudioTracks[0].muted;
 
-    let total = 0;
-    for (let i = 0; i < dataArray.length; i++) {
-        total += dataArray[i];
+    let isVoiceActive = false;
+
+    if (!isTrackDead) {
+        analyser.getByteFrequencyData(dataArray);
+
+        // Analisar banda da voz humana: Bins 2 a 32 (~375 Hz a ~6000 Hz)
+        // Ignoramos bins 0 e 1 (< 180 Hz) para não computar DC offset, zumbido elétrico de 50/60 Hz e chiado residual de placa
+        let voiceSum = 0;
+        let voiceBinsCount = 0;
+        let voiceMax = 0;
+
+        for (let i = 2; i <= 32 && i < dataArray.length; i++) {
+            const val = dataArray[i];
+            voiceSum += val;
+            if (val > voiceMax) voiceMax = val;
+            voiceBinsCount++;
+        }
+
+        const voiceAvg = voiceBinsCount > 0 ? voiceSum / voiceBinsCount : 0;
+
+        // Limiar calibrado: voz humana na reunião gera voiceAvg > 15-60 e voiceMax > 50.
+        // Ruído de fundo de placa em repouso normalmente fica em voiceAvg < 5 e voiceMax < 25.
+        // Consideramos voz ativa se voiceAvg > 8 ou houver pico de voz voiceMax > 35.
+        if (voiceAvg > 8 || voiceMax > 35) {
+            isVoiceActive = true;
+        }
     }
-    const avg = total / dataArray.length;
 
-    if (avg > 1.5) {
-        silenceStartTime = Date.now();
+    if (isVoiceActive) {
+        consecutiveSpeechFrames++;
+        // Histerese: exige pelo menos 4 frames consecutivos (~1 segundo) de áudio ativo
+        // para considerar que a reunião está com som e resetar o temporizador.
+        // Evita que bips curtos de notificação (ex: Outlook, Slack) de 200ms resetem 4+ minutos de silêncio acumulado.
+        if (consecutiveSpeechFrames >= 4) {
+            silenceStartTime = Date.now();
+        }
     } else {
+        consecutiveSpeechFrames = 0;
+        if (!silenceStartTime) {
+            silenceStartTime = Date.now();
+        }
+
         const silenceLimitMinutes = config.autoStopSilenceMinutes !== undefined ? parseFloat(config.autoStopSilenceMinutes) : 5;
         if (silenceLimitMinutes > 0 && silenceStartTime) {
             const silentMs = Date.now() - silenceStartTime;
