@@ -40,6 +40,12 @@ const editTitleBtn = document.getElementById('editTitleBtn');
 const audioDeviceSelect = document.getElementById('audioDeviceSelect');
 const targetMeetingSelect = document.getElementById('targetMeetingSelect');
 const detectedMeetingsBadge = document.getElementById('detectedMeetingsBadge');
+const customTargetDropdown = document.getElementById('customTargetDropdown');
+const customTargetTrigger = document.getElementById('customTargetTrigger');
+const customTargetMenu = document.getElementById('customTargetMenu');
+const customTargetIcon = document.getElementById('customTargetIcon');
+const customTargetText = document.getElementById('customTargetText');
+const customTargetBadge = document.getElementById('customTargetBadge');
 const captureOptionsAccordion = document.getElementById('captureOptionsAccordion');
 const accordionToggleBtn = document.getElementById('accordionToggleBtn');
 const chipMode = document.getElementById('chipMode');
@@ -192,7 +198,7 @@ async function init() {
     openFolderBtn.addEventListener('click', () => window.electronAPI.openOutputDirectory());
     document.getElementById('openLibraryFolderBtn')?.addEventListener('click', () => window.electronAPI.openOutputDirectory());
 
-    // Tecla ESC para fechar modal de tags ou barra lateral da biblioteca
+    // Tecla ESC para fechar modal de tags, menu de reuniões ou barra lateral da biblioteca
     window.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             const tagEditorBackdrop = document.getElementById('tagEditorBackdrop');
@@ -201,10 +207,28 @@ async function init() {
                 return;
             }
 
+            if (customTargetMenu && !customTargetMenu.classList.contains('hidden')) {
+                toggleCustomTargetMenu(false);
+                return;
+            }
+
             if (libraryPanel && libraryPanel.classList.contains('active')) {
                 closeLibrary();
                 return;
             }
+        }
+    });
+
+    if (customTargetTrigger) {
+        customTargetTrigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleCustomTargetMenu();
+        });
+    }
+
+    document.addEventListener('click', (e) => {
+        if (customTargetDropdown && !customTargetDropdown.contains(e.target)) {
+            toggleCustomTargetMenu(false);
         }
     });
 
@@ -216,8 +240,9 @@ async function init() {
     }
     if (targetMeetingSelect) {
         targetMeetingSelect.addEventListener('change', () => {
+            const val = targetMeetingSelect.value;
+            updateCustomTargetTriggerUI(val);
             if (!isRecording) {
-                const val = targetMeetingSelect.value;
                 if (val.startsWith('handle_')) {
                     const h = val.replace('handle_', '');
                     const m = availableMeetingWindows.find(win => win.handle === h);
@@ -240,6 +265,9 @@ async function init() {
             }
         });
     }
+
+    // Inicializar dropdown de alvos na inicialização da interface
+    updateMeetingDropdown([]);
 
     window.electronAPI.onMeetingDetected(async (meetings) => {
         const now = Date.now();
@@ -566,6 +594,180 @@ async function toggleLibrary() {
     }
 }
 
+// Utilitários e Lógica do Dropdown Customizado de Reuniões
+function cleanMeetingTitle(title) {
+    if (!title) return "Reunião do Teams";
+    return title
+        .replace(/\s*\|\s*Microsoft Teams$/i, '')
+        .replace(/\s*-\s*Microsoft Teams$/i, '')
+        .replace(/\s*\|\s*Teams$/i, '')
+        .trim();
+}
+
+function toggleCustomTargetMenu(open) {
+    if (!customTargetTrigger || !customTargetMenu) return;
+    if (customTargetTrigger.disabled) return;
+
+    const isOpen = !customTargetMenu.classList.contains('hidden');
+    const shouldOpen = typeof open === 'boolean' ? open : !isOpen;
+
+    if (shouldOpen) {
+        customTargetMenu.classList.remove('hidden');
+        customTargetTrigger.classList.add('open');
+        customTargetTrigger.setAttribute('aria-expanded', 'true');
+    } else {
+        customTargetMenu.classList.add('hidden');
+        customTargetTrigger.classList.remove('open');
+        customTargetTrigger.setAttribute('aria-expanded', 'false');
+    }
+}
+
+function updateCustomTargetTriggerUI(selectedValue) {
+    if (!customTargetTrigger) return;
+
+    let icon = '🎯';
+    let text = '[Automático] Reunião em Foco / Ativa';
+    let badgeText = 'Auto';
+    let badgeClass = 'badge-auto';
+    let fullTitle = '[Automático] Reunião em Foco / Ativa';
+
+    if (selectedValue === 'screen') {
+        icon = '🖥️';
+        text = 'Gravação Geral da Tela';
+        badgeText = 'Tela';
+        badgeClass = 'badge-screen';
+        fullTitle = 'Gravação Geral da Tela Inteira';
+    } else if (selectedValue && selectedValue.startsWith('handle_')) {
+        const h = selectedValue.replace('handle_', '');
+        const m = availableMeetingWindows.find(win => win.handle === h);
+        if (m) {
+            fullTitle = m.title;
+            text = cleanMeetingTitle(m.title);
+            if (m.isFocused) {
+                icon = '🟢';
+                badgeText = 'Em Foco';
+                badgeClass = 'badge-focus';
+            } else if (m.isHold) {
+                icon = '⏸️';
+                badgeText = 'Em Espera';
+                badgeClass = 'badge-hold';
+            } else {
+                icon = '👥';
+                badgeText = 'Ativa';
+                badgeClass = 'badge-active';
+            }
+        }
+    }
+
+    if (customTargetIcon) customTargetIcon.textContent = icon;
+    if (customTargetText) customTargetText.textContent = text;
+    customTargetTrigger.title = fullTitle;
+
+    if (customTargetBadge) {
+        customTargetBadge.textContent = badgeText;
+        customTargetBadge.className = `target-item-badge ${badgeClass}`;
+    }
+}
+
+function createCustomTargetItem({ value, icon, title, fullTitle, badgeText, badgeClass, isSelected }) {
+    const item = document.createElement('div');
+    item.className = `custom-target-item ${isSelected ? 'selected' : ''}`;
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+    item.title = fullTitle;
+
+    item.innerHTML = `
+        <div class="target-item-main">
+            <span class="target-item-icon">${icon}</span>
+            <span class="target-item-title">${title}</span>
+        </div>
+        <div class="target-item-extra">
+            <span class="target-item-badge ${badgeClass}">${badgeText}</span>
+            ${isSelected ? `
+                <svg class="target-check-icon" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+            ` : ''}
+        </div>
+    `;
+
+    item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectCustomTargetValue(value);
+        toggleCustomTargetMenu(false);
+    });
+
+    return item;
+}
+
+function selectCustomTargetValue(value) {
+    if (!targetMeetingSelect) return;
+    targetMeetingSelect.value = value;
+    targetMeetingSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    renderCustomTargetMenu();
+}
+
+function renderCustomTargetMenu() {
+    if (!customTargetMenu) return;
+    customTargetMenu.innerHTML = '';
+
+    const currentVal = targetMeetingSelect ? targetMeetingSelect.value : 'auto';
+
+    // Opção 1: Automático Inteligente
+    const autoItem = createCustomTargetItem({
+        value: 'auto',
+        icon: '🎯',
+        title: '[Automático] Reunião em Foco / Ativa',
+        fullTitle: '🎯 [Automático] Detecta a chamada do Teams em foco ou ativa',
+        badgeText: 'Auto',
+        badgeClass: 'badge-auto',
+        isSelected: currentVal === 'auto'
+    });
+    customTargetMenu.appendChild(autoItem);
+
+    // Listar janelas encontradas
+    availableMeetingWindows.forEach(m => {
+        let icon = '👥';
+        let badgeText = 'Ativa';
+        let badgeClass = 'badge-active';
+
+        if (m.isFocused) {
+            icon = '🟢';
+            badgeText = 'Em Foco';
+            badgeClass = 'badge-focus';
+        } else if (m.isHold) {
+            icon = '⏸️';
+            badgeText = 'Em Espera';
+            badgeClass = 'badge-hold';
+        }
+
+        const item = createCustomTargetItem({
+            value: `handle_${m.handle}`,
+            icon,
+            title: cleanMeetingTitle(m.title),
+            fullTitle: m.title,
+            badgeText,
+            badgeClass,
+            isSelected: currentVal === `handle_${m.handle}`
+        });
+        customTargetMenu.appendChild(item);
+    });
+
+    // Opção Tela Inteira
+    const screenItem = createCustomTargetItem({
+        value: 'screen',
+        icon: '🖥️',
+        title: 'Gravação Geral da Tela',
+        fullTitle: '🖥️ Gravação Geral da Tela Inteira',
+        badgeText: 'Tela',
+        badgeClass: 'badge-screen',
+        isSelected: currentVal === 'screen'
+    });
+    customTargetMenu.appendChild(screenItem);
+
+    updateCustomTargetTriggerUI(currentVal);
+}
+
 function updateMeetingDropdown(meetings) {
     availableMeetingWindows = Array.isArray(meetings) ? meetings : [];
     
@@ -606,7 +808,7 @@ function updateMeetingDropdown(meetings) {
         } else if (m.isFocused) {
             statusPrefix = '🟢 [Em Foco]';
         }
-        opt.textContent = `${statusPrefix} ${m.title} (ID: ${m.handle})`;
+        opt.textContent = `${statusPrefix} ${cleanMeetingTitle(m.title)}`;
         targetMeetingSelect.appendChild(opt);
     });
 
@@ -623,6 +825,9 @@ function updateMeetingDropdown(meetings) {
     } else {
         targetMeetingSelect.value = 'auto';
     }
+
+    // Renderizar menu customizado com design e badges refinados
+    renderCustomTargetMenu();
 }
 
 async function handleManualStart() {
@@ -1073,6 +1278,10 @@ async function startRecording(sourceId, handle, hasVideo = false) {
         hasAutoCoverBeenTaken = false;
         recordVideoCheckbox.disabled = true;
         if (targetMeetingSelect) targetMeetingSelect.disabled = true;
+        if (customTargetTrigger) {
+            customTargetTrigger.disabled = true;
+            toggleCustomTargetMenu(false);
+        }
         
         mainCard.classList.add('recording');
         statusDot.classList.add('active');
@@ -1156,6 +1365,7 @@ function stopRecording(isManual = false) {
         
         recordVideoCheckbox.disabled = false;
         if (targetMeetingSelect) targetMeetingSelect.disabled = false;
+        if (customTargetTrigger) customTargetTrigger.disabled = false;
         clearInterval(timerInterval);
         if (silenceCheckInterval) {
             clearInterval(silenceCheckInterval);
