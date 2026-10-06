@@ -33,11 +33,18 @@ const notesContainer = document.getElementById('notesContainer');
 const meetingNotes = document.getElementById('meetingNotes');
 const recordVideoCheckbox = document.getElementById('recordVideoCheckbox');
 const autoRecordCheckbox = document.getElementById('autoRecordCheckbox');
+const titleContainer = document.getElementById('titleContainer');
+const titleMarqueeWrapper = document.getElementById('titleMarqueeWrapper');
 const titleInput = document.getElementById('titleInput');
 const editTitleBtn = document.getElementById('editTitleBtn');
 const audioDeviceSelect = document.getElementById('audioDeviceSelect');
 const targetMeetingSelect = document.getElementById('targetMeetingSelect');
 const detectedMeetingsBadge = document.getElementById('detectedMeetingsBadge');
+const captureOptionsAccordion = document.getElementById('captureOptionsAccordion');
+const accordionToggleBtn = document.getElementById('accordionToggleBtn');
+const chipMode = document.getElementById('chipMode');
+const chipMedia = document.getElementById('chipMedia');
+const chipMic = document.getElementById('chipMic');
 let availableMeetingWindows = [];
 
 // Active recording tags elements
@@ -349,6 +356,7 @@ async function init() {
             audioLabel.classList.add('active');
             videoLabel.classList.remove('active');
         }
+        updateAccordionChips();
     });
 
     autoRecordCheckbox.addEventListener('change', () => {
@@ -356,6 +364,12 @@ async function init() {
         updateAutoRecordModeUI(isAuto);
         window.electronAPI.updateConfig({ autoRecord: isAuto });
     });
+
+    if (audioDeviceSelect) {
+        audioDeviceSelect.addEventListener('change', () => {
+            updateAccordionChips();
+        });
+    }
 
     window.electronAPI.onTogglePause(() => togglePause());
 
@@ -387,6 +401,10 @@ async function init() {
             videoCompositor.addClick(nx, ny, e.button === 2 ? 'right' : 'left');
         }
     });
+
+    // Inicializar Acordeon e Efeito Spotify Marquee
+    initCaptureOptionsAccordion();
+    initSpotifyMarquee();
 }
 
 async function loadAudioDevices() {
@@ -400,6 +418,7 @@ async function loadAudioDevices() {
         option.textContent = `🎙️ Incluir meu Mic: ${device.label || 'Microfone ' + (index + 1)}`;
         audioDeviceSelect.appendChild(option);
     });
+    updateAccordionChips();
 }
 
 function updateAutoRecordModeUI(isAuto) {
@@ -409,14 +428,49 @@ function updateAutoRecordModeUI(isAuto) {
         offLabel?.classList.remove('active');
         onLabel?.classList.add('active');
     } else {
-        offLabel?.classList.remove('active');
-        onLabel?.classList.add('active');
+        offLabel?.classList.add('active');
+        onLabel?.classList.remove('active');
     }
+    updateAccordionChips();
+}
+
+function checkTitleOverflow() {
+    if (!meetingTitle || !titleMarqueeWrapper || !titleContainer) return;
+    
+    // Check if the title text overflows the single-line container
+    const isOverflowing = meetingTitle.scrollWidth > (titleMarqueeWrapper.clientWidth + 2);
+    
+    if (isOverflowing) {
+        titleContainer.classList.add('has-overflow');
+        const overflowDistance = meetingTitle.scrollWidth - titleMarqueeWrapper.clientWidth;
+        meetingTitle.style.setProperty('--scroll-distance', `-${overflowDistance + 24}px`);
+        
+        // Adaptive duration for smooth reading
+        const duration = Math.max(5, Math.min(14, Math.round(overflowDistance / 24) + 4));
+        meetingTitle.style.setProperty('--marquee-duration', `${duration}s`);
+    } else {
+        titleContainer.classList.remove('has-overflow');
+        meetingTitle.style.removeProperty('--scroll-distance');
+        meetingTitle.style.removeProperty('--marquee-duration');
+    }
+}
+
+function initSpotifyMarquee() {
+    if (!meetingTitle) return;
+
+    const observer = new MutationObserver(() => {
+        checkTitleOverflow();
+    });
+    observer.observe(meetingTitle, { childList: true, characterData: true, subtree: true });
+
+    window.addEventListener('resize', checkTitleOverflow);
+    checkTitleOverflow();
 }
 
 function enterEditMode() {
     if (meetingTitle.textContent === "Modo Player" || meetingTitle.textContent === "Processando arquivo") return;
     titleInput.value = meetingTitle.textContent === "Nenhuma reunião detectada" ? "" : meetingTitle.textContent;
+    titleMarqueeWrapper?.classList.add('hidden');
     meetingTitle.classList.add('hidden');
     editTitleBtn.classList.add('hidden');
     titleInput.classList.remove('hidden');
@@ -434,8 +488,65 @@ function exitEditMode(save) {
         }
     }
     titleInput.classList.add('hidden');
+    titleMarqueeWrapper?.classList.remove('hidden');
     meetingTitle.classList.remove('hidden');
     editTitleBtn.classList.remove('hidden');
+    checkTitleOverflow();
+}
+
+function updateAccordionChips() {
+    if (!chipMode || !chipMedia || !chipMic) return;
+
+    // Mode Chip
+    const isAuto = autoRecordCheckbox ? autoRecordCheckbox.checked : true;
+    if (isAuto) {
+        chipMode.textContent = '⚡ Automático';
+        chipMode.className = 'acc-chip chip-auto';
+    } else {
+        chipMode.textContent = '✋ Manual';
+        chipMode.className = 'acc-chip chip-manual';
+    }
+
+    // Media Chip
+    const isVideo = recordVideoCheckbox ? recordVideoCheckbox.checked : false;
+    if (isVideo) {
+        chipMedia.textContent = '📹 Vídeo';
+        chipMedia.className = 'acc-chip chip-video';
+    } else {
+        chipMedia.textContent = '🎵 Áudio';
+        chipMedia.className = 'acc-chip';
+    }
+
+    // Mic Chip
+    const micVal = audioDeviceSelect ? audioDeviceSelect.value : 'none';
+    if (micVal && micVal !== 'none') {
+        chipMic.textContent = '🎙️ Mic Ativo';
+        chipMic.className = 'acc-chip chip-mic-active';
+    } else {
+        chipMic.textContent = '🔊 Sem Mic';
+        chipMic.className = 'acc-chip';
+    }
+}
+
+function initCaptureOptionsAccordion() {
+    if (!captureOptionsAccordion || !accordionToggleBtn) return;
+
+    // Restore state from localStorage (default collapsed to optimize UI space)
+    const savedState = localStorage.getItem('meet_record_options_open');
+    if (savedState === 'true') {
+        captureOptionsAccordion.classList.add('open');
+    } else {
+        captureOptionsAccordion.classList.remove('open');
+    }
+
+    accordionToggleBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        captureOptionsAccordion.classList.toggle('open');
+        const isOpen = captureOptionsAccordion.classList.contains('open');
+        localStorage.setItem('meet_record_options_open', isOpen);
+    });
+
+    updateAccordionChips();
 }
 
 function closeLibrary() {

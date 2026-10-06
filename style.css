@@ -423,7 +423,7 @@ input:checked + .slider:before {
     -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--glass-border);
     border-radius: 32px;
-    padding: 3.5rem;
+    padding: 2.25rem 2.5rem;
     width: 100%;
     max-width: 520px;
     text-align: center;
@@ -457,32 +457,84 @@ input:checked + .slider:before {
     width: 100%;
 }
 
-.title-container {
+/* Spotify-Style Single Line Title */
+.title-container,
+.spotify-title-container {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
     position: relative;
-    padding: 4px;
-    border-radius: 12px;
+    padding: 6px 10px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid transparent;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.spotify-title-container:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: var(--glass-border);
+}
+
+.spotify-marquee-wrapper {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
     transition: all 0.3s ease;
 }
 
-.meeting-info h2 {
-    font-size: 1.5rem;
-    line-height: 1.3;
-    white-space: normal;
-    word-break: break-word;
+/* Mask gradient fade on right edge when text overflows */
+.spotify-title-container.has-overflow .spotify-marquee-wrapper {
+    justify-content: flex-start;
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 24px), transparent 100%);
+}
+
+.meeting-info h2,
+.spotify-title-text {
+    font-size: 1.25rem;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-weight: 600;
     color: var(--text-primary);
-    transition: all 0.3s ease;
+    transition: color 0.3s ease;
     cursor: pointer;
     margin: 0;
+    display: inline-block;
+    letter-spacing: -0.2px;
 }
 
-.meeting-info h2:hover {
+.meeting-info h2:hover,
+.spotify-title-text:hover {
     color: var(--accent-color);
+}
+
+/* On hover or during active recording, animate overflowing title */
+.spotify-title-container.has-overflow:hover .spotify-title-text,
+.status-card.recording .spotify-title-container.has-overflow .spotify-title-text {
+    text-overflow: clip;
+    animation: spotifyScroll var(--marquee-duration, 7s) cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite alternate;
+}
+
+@keyframes spotifyScroll {
+    0%, 20% {
+        transform: translateX(0);
+    }
+    80%, 100% {
+        transform: translateX(var(--scroll-distance, -60px));
+    }
 }
 
 .edit-btn {
@@ -2451,7 +2503,7 @@ footer {
 
 .card-controls {
     width: 100%;
-    margin-top: 2rem;
+    margin-top: 1.15rem;
 }
 
 .playback-controls {
@@ -4043,6 +4095,155 @@ code {
     padding: 8px;
     font-size: 0.85rem;
 }
+
+/* ==========================================================================
+   CAPTURE OPTIONS ACCORDION
+   ========================================================================== */
+.capture-accordion {
+    width: 100%;
+    margin-bottom: 0.75rem;
+    background: rgba(15, 23, 42, 0.45);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.capture-accordion:hover {
+    border-color: rgba(56, 189, 248, 0.3);
+    background: rgba(15, 23, 42, 0.6);
+}
+
+.accordion-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    outline: none;
+    color: var(--text-primary);
+    transition: background 0.2s ease;
+}
+
+.accordion-header:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.accordion-header-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+}
+
+.accordion-icon {
+    color: var(--accent-color);
+}
+
+.accordion-chips {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+    flex-wrap: nowrap;
+}
+
+.acc-chip {
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    white-space: nowrap;
+    transition: all 0.25s ease;
+}
+
+.acc-chip.chip-auto {
+    background: rgba(56, 189, 248, 0.12);
+    color: var(--accent-color);
+    border-color: rgba(56, 189, 248, 0.3);
+}
+
+.acc-chip.chip-manual {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-secondary);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.acc-chip.chip-video {
+    background: rgba(236, 72, 153, 0.12);
+    color: #f472b6;
+    border-color: rgba(236, 72, 153, 0.3);
+}
+
+.acc-chip.chip-mic-active {
+    background: rgba(16, 185, 129, 0.12);
+    color: #34d399;
+    border-color: rgba(52, 211, 153, 0.3);
+}
+
+.accordion-chevron {
+    color: var(--text-secondary);
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s ease;
+    flex-shrink: 0;
+}
+
+.accordion-header:hover .accordion-chevron {
+    color: var(--accent-color);
+}
+
+.capture-accordion.open .accordion-chevron {
+    transform: rotate(180deg);
+    color: var(--accent-color);
+}
+
+/* CSS Grid Smooth Collapse Animation */
+.accordion-collapse-wrapper {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+    opacity: 0;
+}
+
+.capture-accordion.open .accordion-collapse-wrapper {
+    grid-template-rows: 1fr;
+    opacity: 1;
+}
+
+.accordion-inner {
+    overflow: hidden;
+}
+
+.capture-accordion .manual-options {
+    padding: 10px 8px 8px 8px;
+    margin-bottom: 0;
+    border-top: 1px solid var(--glass-border);
+    justify-content: center;
+    gap: 8px;
+}
+
+.capture-accordion .mode-toggle {
+    padding: 5px 12px;
+    gap: 12px;
+}
+
+.capture-accordion .audio-hardware-selector {
+    padding: 5px 10px;
+}
+
 
 
 
