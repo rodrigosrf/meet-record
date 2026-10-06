@@ -94,6 +94,7 @@ let isManualRecording = false;
 let startTime;
 let timerInterval;
 let currentMeetingHandle = "";
+let isSpecificTeamsWindowSelected = false;
 let lastDetectedMeetings = [];
 let manuallyStoppedMeetings = new Map();
 const STOPPED_MEETING_COOLDOWN = 2 * 60 * 1000;
@@ -303,9 +304,13 @@ async function init() {
             if (availableMeetings.length > 0) {
                 // Verificar se o usuário selecionou uma janela específica no dropdown
                 let chosenMeeting = null;
+                let fromSpecificSelection = false;
                 if (targetMeetingSelect && targetMeetingSelect.value.startsWith('handle_')) {
                     const chosenHandle = targetMeetingSelect.value.replace('handle_', '');
                     chosenMeeting = availableMeetings.find(m => m.handle === chosenHandle);
+                    if (chosenMeeting) {
+                        fromSpecificSelection = true;
+                    }
                 }
 
                 // Se em modo automático: prioriza chamada ativa (!isHold) e em foco
@@ -317,6 +322,7 @@ async function init() {
                 }
 
                 if (chosenMeeting) {
+                    isSpecificTeamsWindowSelected = fromSpecificSelection;
                     handleMeetingDetected(chosenMeeting.title, chosenMeeting.handle);
                 }
             }
@@ -859,6 +865,7 @@ async function handleManualStart() {
         const selectedHandle = selectedTarget.replace('handle_', '');
         const targetMeeting = availableMeetingWindows.find(m => m.handle === selectedHandle);
         if (targetMeeting) {
+            isSpecificTeamsWindowSelected = true;
             if (!isTitleManuallyEdited) {
                 currentMeetingName = targetMeeting.title;
                 meetingTitle.textContent = targetMeeting.title;
@@ -879,6 +886,7 @@ async function handleManualStart() {
 
     // 2. Se o usuário selecionou Tela Inteira explicitamente:
     if (selectedTarget === 'screen') {
+        isSpecificTeamsWindowSelected = false;
         const screenSource = sources.find(s => s.id.startsWith('screen:')) || sources[0];
         if (screenSource) {
             if (!isTitleManuallyEdited) {
@@ -897,6 +905,7 @@ async function handleManualStart() {
         || availableMeetingWindows[0];
 
     if (bestMeeting) {
+        isSpecificTeamsWindowSelected = false;
         if (!isTitleManuallyEdited) {
             currentMeetingName = bestMeeting.title;
             meetingTitle.textContent = bestMeeting.title;
@@ -914,6 +923,7 @@ async function handleManualStart() {
     }
 
     // 4. Fallback padrão: busca qualquer janela que pareça reunião
+    isSpecificTeamsWindowSelected = false;
     const meetingSource = sources.find(s => {
         const name = s.name.toLowerCase();
         return name.includes('reuni') || name.includes('meeting') || name.includes('teams');
@@ -984,22 +994,17 @@ async function promptTeamsMeetingEnded(meetingTitle) {
 
     try {
         const titleToUse = meetingTitle || currentMeetingName || "Microsoft Teams";
-        console.log(`[Teams] Janela da reunião "${titleToUse}" foi encerrada. Perguntando ao usuário se deseja finalizar gravação...`);
-        
-        const shouldStop = await window.electronAPI.askStopRecording({
-            meetingTitle: titleToUse
-        });
+        console.log(`[Teams] Reunião "${titleToUse}" finalizada. Encerrando gravação automaticamente.`);
 
-        if (shouldStop) {
-            console.log("[Teams] Usuário confirmou encerramento da gravação.");
-            stopRecording(false);
-        } else {
-            console.log("[Teams] Usuário optou por continuar a gravação.");
-            isManualRecording = true;
-            currentMeetingHandle = "";
-        }
-    } catch (err) {
-        console.error("Erro ao solicitar confirmação de encerramento:", err);
+        try {
+            const n = new Notification("Meet Record", {
+                body: `Reunião finalizada no Teams (${titleToUse}). Gravação encerrada automaticamente.`,
+                silent: false
+            });
+            setTimeout(() => n.close(), 4000);
+        } catch (e) { /* ignore */ }
+
+        stopRecording(false);
     } finally {
         isPromptingMeetingEnd = false;
     }
@@ -1344,6 +1349,8 @@ function stopRecording(isManual = false) {
         isRecording = false;
         isStarting = false;
         isTitleManuallyEdited = false;
+        isSpecificTeamsWindowSelected = false;
+        currentMeetingHandle = "";
         
         if (activeStreamCleanup) {
             activeStreamCleanup();

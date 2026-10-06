@@ -11,7 +11,7 @@
     "build": "electron-builder --win --x64"
   },
   "build": {
-    "appId": "com.meetrecord.app",
+    "appId": "com.meetrecord.desktop",
     "productName": "Meet Record",
     "directories": {
       "output": "dist"
@@ -22,6 +22,7 @@
       "node_modules/ffmpeg-static/**/*"
     ],
     "win": {
+      "icon": "assets/icon.ico",
       "target": [
         "nsis"
       ]

@@ -19,6 +19,13 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+app.name = 'Meet Record';
+
+// Identificador do aplicativo no Windows para exibir o icone customizado na barra de tarefas
+if (process.platform === 'win32') {
+    app.setAppUserModelId('com.meetrecord.desktop');
+}
+
 const store = new Store({
     defaults: {
         outputDirectory: '',
@@ -170,12 +177,25 @@ function createSettingsWindow() {
     });
 }
 
+function isPositionVisibleOnAnyScreen(x, y, width = 300, height = 64) {
+    const displays = screen.getAllDisplays();
+    return displays.some(display => {
+        const { x: dx, y: dy, width: dw, height: dh } = display.bounds;
+        return (
+            x + width > dx &&
+            x < dx + dw &&
+            y + height > dy &&
+            y < dy + dh
+        );
+    });
+}
+
 function createOverlayWindow() {
     if (overlayWindow) return;
 
     overlayWindow = new BrowserWindow({
-        width: 280,
-        height: 60,
+        width: 300,
+        height: 64,
         frame: false,
         transparent: true,
         alwaysOnTop: true,
@@ -197,10 +217,27 @@ function createOverlayWindow() {
 
     overlayWindow.loadFile('overlay.html');
     
-    // Position it at the bottom right of the primary screen
-    const primaryDisplay = screen.getPrimaryDisplay();
-    const { width, height } = primaryDisplay.workAreaSize;
-    overlayWindow.setPosition(width - 300, height - 80);
+    // Position it: restore saved multi-monitor coordinates or default to primary screen bottom-right
+    const savedPos = store.get('overlayPosition');
+    if (savedPos && typeof savedPos.x === 'number' && typeof savedPos.y === 'number' && isPositionVisibleOnAnyScreen(savedPos.x, savedPos.y, 300, 64)) {
+        overlayWindow.setPosition(savedPos.x, savedPos.y);
+    } else {
+        const primaryDisplay = screen.getPrimaryDisplay();
+        const { width, height } = primaryDisplay.workAreaSize;
+        overlayWindow.setPosition(width - 320, height - 90);
+    }
+
+    // Persist position whenever the user drags the overlay across monitors
+    let moveDebounce = null;
+    overlayWindow.on('moved', () => {
+        if (!overlayWindow) return;
+        if (moveDebounce) clearTimeout(moveDebounce);
+        moveDebounce = setTimeout(() => {
+            if (!overlayWindow) return;
+            const [x, y] = overlayWindow.getPosition();
+            store.set('overlayPosition', { x, y });
+        }, 150);
+    });
 
     overlayWindow.on('closed', () => {
         overlayWindow = null;
@@ -215,6 +252,20 @@ function createOverlayWindow() {
 }
 
 app.whenReady().then(() => {
+    // Keep overlay safely on-screen if a secondary display is disconnected
+    screen.on('display-removed', () => {
+        if (!overlayWindow) return;
+        const [x, y] = overlayWindow.getPosition();
+        if (!isPositionVisibleOnAnyScreen(x, y, 300, 64)) {
+            const primaryDisplay = screen.getPrimaryDisplay();
+            const { width, height } = primaryDisplay.workAreaSize;
+            const newX = width - 320;
+            const newY = height - 90;
+            overlayWindow.setPosition(newX, newY);
+            store.set('overlayPosition', { x: newX, y: newY });
+        }
+    });
+
     createWindow();
     startDetectionLoop();
     cleanupOldImages();
