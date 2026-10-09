@@ -52,6 +52,7 @@ const chipMode = document.getElementById('chipMode');
 const chipMedia = document.getElementById('chipMedia');
 const chipMic = document.getElementById('chipMic');
 let availableMeetingWindows = [];
+let userExplicitlySelectedTarget = false;
 
 // Active recording tags elements
 const activeRecTagsList = document.getElementById('activeRecTagsList');
@@ -361,6 +362,7 @@ async function init() {
         if (config.autoRecord !== undefined) {
             autoRecordCheckbox.checked = config.autoRecord;
             updateAutoRecordModeUI(config.autoRecord);
+            updateMeetingDropdown(lastDetectedMeetings);
         }
     });
 
@@ -397,6 +399,7 @@ async function init() {
         const isAuto = autoRecordCheckbox.checked;
         updateAutoRecordModeUI(isAuto);
         window.electronAPI.updateConfig({ autoRecord: isAuto });
+        updateMeetingDropdown(lastDetectedMeetings);
     });
 
     if (audioDeviceSelect) {
@@ -497,7 +500,10 @@ function initSpotifyMarquee() {
     });
     observer.observe(meetingTitle, { childList: true, characterData: true, subtree: true });
 
-    window.addEventListener('resize', checkTitleOverflow);
+    window.addEventListener('resize', () => {
+        checkTitleOverflow();
+        updateCustomTargetMenuPosition();
+    });
     checkTitleOverflow();
 }
 
@@ -578,6 +584,7 @@ function initCaptureOptionsAccordion() {
         captureOptionsAccordion.classList.toggle('open');
         const isOpen = captureOptionsAccordion.classList.contains('open');
         localStorage.setItem('meet_record_options_open', isOpen);
+        toggleCustomTargetMenu(false);
     });
 
     updateAccordionChips();
@@ -610,6 +617,27 @@ function cleanMeetingTitle(title) {
         .trim();
 }
 
+function updateCustomTargetMenuPosition() {
+    if (!customTargetTrigger || !customTargetMenu) return;
+    if (customTargetMenu.classList.contains('hidden')) return;
+
+    const rect = customTargetTrigger.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const spaceBelow = viewportHeight - rect.bottom - 12;
+    const spaceAbove = rect.top - 12;
+
+    // Se o espaço inferior na tela for muito reduzido (< 140px) e houver mais espaço acima, inverte para cima
+    if (spaceBelow < 140 && spaceAbove > spaceBelow) {
+        customTargetMenu.classList.add('drop-up');
+        customTargetMenu.style.maxHeight = `${Math.min(300, Math.max(120, spaceAbove))}px`;
+    } else {
+        customTargetMenu.classList.remove('drop-up');
+        // Abre para baixo, ultrapassando livremente a borda inferior do card e respeitando a tela
+        const maxH = Math.min(280, Math.max(140, spaceBelow > 0 ? spaceBelow : 260));
+        customTargetMenu.style.maxHeight = `${maxH}px`;
+    }
+}
+
 function toggleCustomTargetMenu(open) {
     if (!customTargetTrigger || !customTargetMenu) return;
     if (customTargetTrigger.disabled) return;
@@ -621,29 +649,25 @@ function toggleCustomTargetMenu(open) {
         customTargetMenu.classList.remove('hidden');
         customTargetTrigger.classList.add('open');
         customTargetTrigger.setAttribute('aria-expanded', 'true');
+        updateCustomTargetMenuPosition();
     } else {
         customTargetMenu.classList.add('hidden');
         customTargetTrigger.classList.remove('open');
         customTargetTrigger.setAttribute('aria-expanded', 'false');
+        customTargetMenu.classList.remove('drop-up');
     }
 }
 
 function updateCustomTargetTriggerUI(selectedValue) {
     if (!customTargetTrigger) return;
 
-    let icon = '🎯';
-    let text = '[Automático] Reunião em Foco / Ativa';
-    let badgeText = 'Auto';
-    let badgeClass = 'badge-auto';
-    let fullTitle = '[Automático] Reunião em Foco / Ativa';
+    let icon = '🖥️';
+    let text = 'Gravação Geral da Tela';
+    let badgeText = 'Tela';
+    let badgeClass = 'badge-screen';
+    let fullTitle = 'Gravação Geral da Tela Inteira';
 
-    if (selectedValue === 'screen') {
-        icon = '🖥️';
-        text = 'Gravação Geral da Tela';
-        badgeText = 'Tela';
-        badgeClass = 'badge-screen';
-        fullTitle = 'Gravação Geral da Tela Inteira';
-    } else if (selectedValue && selectedValue.startsWith('handle_')) {
+    if (selectedValue && selectedValue.startsWith('handle_')) {
         const h = selectedValue.replace('handle_', '');
         const m = availableMeetingWindows.find(win => win.handle === h);
         if (m) {
@@ -708,6 +732,7 @@ function createCustomTargetItem({ value, icon, title, fullTitle, badgeText, badg
 
 function selectCustomTargetValue(value) {
     if (!targetMeetingSelect) return;
+    userExplicitlySelectedTarget = true;
     targetMeetingSelect.value = value;
     targetMeetingSelect.dispatchEvent(new Event('change', { bubbles: true }));
     renderCustomTargetMenu();
@@ -717,19 +742,7 @@ function renderCustomTargetMenu() {
     if (!customTargetMenu) return;
     customTargetMenu.innerHTML = '';
 
-    const currentVal = targetMeetingSelect ? targetMeetingSelect.value : 'auto';
-
-    // Opção 1: Automático Inteligente
-    const autoItem = createCustomTargetItem({
-        value: 'auto',
-        icon: '🎯',
-        title: '[Automático] Reunião em Foco / Ativa',
-        fullTitle: '🎯 [Automático] Detecta a chamada do Teams em foco ou ativa',
-        badgeText: 'Auto',
-        badgeClass: 'badge-auto',
-        isSelected: currentVal === 'auto'
-    });
-    customTargetMenu.appendChild(autoItem);
+    const currentVal = targetMeetingSelect ? targetMeetingSelect.value : 'screen';
 
     // Listar janelas encontradas
     availableMeetingWindows.forEach(m => {
@@ -772,14 +785,23 @@ function renderCustomTargetMenu() {
     customTargetMenu.appendChild(screenItem);
 
     updateCustomTargetTriggerUI(currentVal);
+    if (customTargetMenu && !customTargetMenu.classList.contains('hidden')) {
+        updateCustomTargetMenuPosition();
+    }
 }
 
 function updateMeetingDropdown(meetings) {
     availableMeetingWindows = Array.isArray(meetings) ? meetings : [];
     
+    // Atualizar badge de status das reuniões e feedback contextual do modo (Sugestão 2)
     if (detectedMeetingsBadge) {
+        const isAuto = autoRecordCheckbox ? autoRecordCheckbox.checked : (config ? config.autoRecord : true);
         if (availableMeetingWindows.length === 0) {
-            detectedMeetingsBadge.textContent = "Nenhuma janela do Teams";
+            if (isAuto) {
+                detectedMeetingsBadge.textContent = "⚡ Auto: Aguardando Teams...";
+            } else {
+                detectedMeetingsBadge.textContent = "Modo Manual (Tela Inteira)";
+            }
             detectedMeetingsBadge.classList.remove('active-count');
         } else {
             const activeCount = availableMeetingWindows.filter(m => !m.isHold).length;
@@ -788,21 +810,19 @@ function updateMeetingDropdown(meetings) {
             if (holdCount > 0) {
                 text += ` (${activeCount} ativa, ${holdCount} em espera)`;
             }
+            if (isAuto) {
+                text += " • Auto Ativo";
+            }
             detectedMeetingsBadge.textContent = text;
             detectedMeetingsBadge.classList.add('active-count');
         }
     }
 
     if (!targetMeetingSelect) return;
+    if (isRecording) return;
 
     const previousSelectedValue = targetMeetingSelect.value;
     targetMeetingSelect.innerHTML = '';
-
-    // Opção 1: Automático Inteligente
-    const autoOption = document.createElement('option');
-    autoOption.value = 'auto';
-    autoOption.textContent = '🎯 [Automático] Reunião em Foco / Ativa';
-    targetMeetingSelect.appendChild(autoOption);
 
     // Listar janelas encontradas
     availableMeetingWindows.forEach(m => {
@@ -824,12 +844,36 @@ function updateMeetingDropdown(meetings) {
     screenOption.textContent = '🖥️ Gravação Geral da Tela';
     targetMeetingSelect.appendChild(screenOption);
 
-    // Restaurar valor se ainda existir
+    // Sugestão 1: Pré-seleção contextual inteligente
     const exists = Array.from(targetMeetingSelect.options).some(o => o.value === previousSelectedValue);
-    if (exists) {
+    if (userExplicitlySelectedTarget && exists) {
+        // Se o usuário selecionou uma opção manualmente e ela ainda existe, preserva
         targetMeetingSelect.value = previousSelectedValue;
+    } else if (availableMeetingWindows.length > 0) {
+        // Pré-seleciona a chamada em foco ou ativa
+        const bestMeeting = availableMeetingWindows.find(m => !m.isHold && m.isFocused)
+            || availableMeetingWindows.find(m => !m.isHold)
+            || availableMeetingWindows[0];
+        targetMeetingSelect.value = `handle_${bestMeeting.handle}`;
     } else {
-        targetMeetingSelect.value = 'auto';
+        // Sem reuniões: fica em gravação geral da tela
+        targetMeetingSelect.value = 'screen';
+        userExplicitlySelectedTarget = false;
+    }
+
+    // Atualizar preview do título se não estiver editado manualmente
+    if (!isTitleManuallyEdited) {
+        if (targetMeetingSelect.value.startsWith('handle_')) {
+            const h = targetMeetingSelect.value.replace('handle_', '');
+            const m = availableMeetingWindows.find(win => win.handle === h);
+            if (m) {
+                currentMeetingName = m.title;
+                meetingTitle.textContent = m.title;
+            }
+        } else if (targetMeetingSelect.value === 'screen') {
+            currentMeetingName = "Aguardando Reunião...";
+            meetingTitle.textContent = "Aguardando Reunião...";
+        }
     }
 
     // Renderizar menu customizado com design e badges refinados
@@ -858,10 +902,10 @@ async function handleManualStart() {
     statusLabel.textContent = "Buscando Janelas...";
     const sources = await window.electronAPI.getSources();
 
-    const selectedTarget = targetMeetingSelect ? targetMeetingSelect.value : 'auto';
+    const selectedTarget = targetMeetingSelect ? targetMeetingSelect.value : 'screen';
 
     // 1. Se o usuário selecionou uma janela específica do Teams no dropdown:
-    if (selectedTarget.startsWith('handle_')) {
+    if (selectedTarget && selectedTarget.startsWith('handle_')) {
         const selectedHandle = selectedTarget.replace('handle_', '');
         const targetMeeting = availableMeetingWindows.find(m => m.handle === selectedHandle);
         if (targetMeeting) {
@@ -884,74 +928,23 @@ async function handleManualStart() {
         }
     }
 
-    // 2. Se o usuário selecionou Tela Inteira explicitamente:
-    if (selectedTarget === 'screen') {
-        isSpecificTeamsWindowSelected = false;
-        const screenSource = sources.find(s => s.id.startsWith('screen:')) || sources[0];
-        if (screenSource) {
-            if (!isTitleManuallyEdited) {
-                currentMeetingName = "Gravação de Tela";
-                meetingTitle.textContent = "Gravação Manual (Tela Inteira)";
-            }
-            currentMeetingHandle = "screen_" + Date.now();
-            startRecording(screenSource.id, currentMeetingHandle, hasVideo);
-            return;
-        }
-    }
-
-    // 3. Modo Automático: prioriza reunião do Teams ativa e em foco
-    let bestMeeting = availableMeetingWindows.find(m => !m.isHold && m.isFocused)
-        || availableMeetingWindows.find(m => !m.isHold)
-        || availableMeetingWindows[0];
-
-    if (bestMeeting) {
-        isSpecificTeamsWindowSelected = false;
-        if (!isTitleManuallyEdited) {
-            currentMeetingName = bestMeeting.title;
-            meetingTitle.textContent = bestMeeting.title;
-        }
-        currentMeetingHandle = bestMeeting.handle;
-
-        const source = sources.find(s => s.name === bestMeeting.title)
-            || sources.find(s => s.name.includes(bestMeeting.title) || bestMeeting.title.includes(s.name))
-            || sources.find(s => s.name.includes('Teams'));
-
-        if (source) {
-            startRecording(source.id, bestMeeting.handle, hasVideo);
-            return;
-        }
-    }
-
-    // 4. Fallback padrão: busca qualquer janela que pareça reunião
+    // 2. Gravação Geral da Tela (screen ou fallback):
     isSpecificTeamsWindowSelected = false;
-    const meetingSource = sources.find(s => {
-        const name = s.name.toLowerCase();
-        return name.includes('reuni') || name.includes('meeting') || name.includes('teams');
-    });
-
-    if (meetingSource) {
-        if (!isTitleManuallyEdited) {
-            currentMeetingName = meetingSource.name;
-            meetingTitle.textContent = meetingSource.name;
-        }
-        startRecording(meetingSource.id, "", hasVideo);
-        return;
-    }
-
     const screenSource = sources.find(s => s.id.startsWith('screen:')) || sources[0];
     if (screenSource) {
         if (!isTitleManuallyEdited) {
-            currentMeetingName = "Gravação Manual";
-            meetingTitle.textContent = "Gravação Manual (Tela)";
+            currentMeetingName = "Gravação de Tela";
+            meetingTitle.textContent = "Gravação Manual (Tela Inteira)";
         }
-        currentMeetingHandle = "manual_" + Date.now();
-        startRecording(screenSource.id, "", hasVideo);
-    } else {
-        statusLabel.textContent = "Nenhuma fonte encontrada";
-        isStarting = false;
-        startBtn.disabled = false;
-        startBtn.querySelector('span').textContent = "Iniciar Gravação Manual";
+        currentMeetingHandle = "screen_" + Date.now();
+        startRecording(screenSource.id, currentMeetingHandle, hasVideo);
+        return;
     }
+
+    statusLabel.textContent = "Nenhuma fonte encontrada";
+    isStarting = false;
+    startBtn.disabled = false;
+    startBtn.querySelector('span').textContent = "Iniciar Gravação Manual";
 }
 
 async function handleMeetingDetected(title, handle) {
@@ -967,6 +960,7 @@ async function handleMeetingDetected(title, handle) {
         meetingTitle.textContent = title;
     }
     currentMeetingHandle = handle;
+    updateCustomTargetTriggerUI('handle_' + handle);
 
     if (!config.outputDirectory) {
         statusLabel.textContent = "Aguardando Configuração";
@@ -1412,6 +1406,7 @@ function stopRecording(isManual = false) {
         resetVisualizer();
 
         window.electronAPI.hideOverlay();
+        updateMeetingDropdown(lastDetectedMeetings);
     }
 }
 
