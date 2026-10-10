@@ -40,7 +40,7 @@ meet-record/
 │   └── 📂 renderer/
 │       ├── 📄 audioDeviceManager.js # Enumeração e gerenciamento de dispositivos de entrada/saída de áudio
 │       ├── 📄 audioPlayer.js        # Controller de reprodução de gravações na interface
-│       ├── 📄 audioVisualizer.js    # Engine de equalizador High-DPI (Espectro, Ondas, LED, Hélice, Elétrico, Aurora, Plasma, Prisma)
+│       ├── 📄 audioVisualizer.js    # Engine de equalizador High-DPI (Espectro, Ondas, LED, Hélice, Elétrico, Aurora, Plasma, Prisma, Pulsar, Horizonte, Sinapse, Sonar)
 │       ├── 📄 videoCompositor.js    # Engine de efeitos em tempo real (Spotlight Halo, Click Ripples, Privacy Shield)
 │       ├── 📄 libraryManager.js     # Renderização, filtragem e ordenação da biblioteca de reuniões
 │       ├── 📄 screenshotGallery.js  # Galeria modal e visualizador HD de prints vinculados às gravações

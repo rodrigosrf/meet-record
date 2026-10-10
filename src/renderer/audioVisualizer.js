@@ -10,7 +10,7 @@ export class AudioVisualizer {
         this.container = document.getElementById(containerId);
         this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
         
-        // Modos disponíveis: 'spectrum', 'wave', 'led', 'helix', 'electric', 'aurora', 'plasma', 'prism'
+        // Modos disponíveis: 'spectrum', 'wave', 'led', 'helix', 'electric', 'aurora', 'plasma', 'prism', 'pulsar', 'horizon', 'synapse', 'sonar'
         const savedMode = localStorage.getItem('meet_record_visualizer_mode');
         const invalidModes = ['particles', 'orbit', 'cyber', 'tunnel', 'radial'];
         const migratedMode = savedMode === 'liquid' ? 'electric' : savedMode;
@@ -27,6 +27,15 @@ export class AudioVisualizer {
         this.electricSparks = [];
         this.auroraPhase = 0;
         this.plasmaPhase = 0;
+        this.pulsarPhase = 0;
+        this.pulsarShockwaves = [];
+        this.pulsarStars = [];
+        this.horizonPhase = 0;
+        this.synapseNodes = [];
+        this.synapsePulses = [];
+        this.synapsePhase = 0;
+        this.sonarAngle = 0;
+        this.sonarBlips = [];
         this.idlePhase = 0;
         
         // Nível VU (Volume Meter) suavizado
@@ -45,11 +54,14 @@ export class AudioVisualizer {
     }
 
     setMode(newMode) {
-        if (['spectrum', 'wave', 'led', 'helix', 'electric', 'liquid', 'aurora', 'plasma', 'prism'].includes(newMode)) {
+        if (['spectrum', 'wave', 'led', 'helix', 'electric', 'liquid', 'aurora', 'plasma', 'prism', 'pulsar', 'horizon', 'synapse', 'sonar'].includes(newMode)) {
             this.mode = newMode === 'liquid' ? 'electric' : newMode;
             localStorage.setItem('meet_record_visualizer_mode', this.mode);
             this.peaks = [];
             this.peakHold = [];
+            this.pulsarShockwaves = [];
+            this.synapsePulses = [];
+            this.sonarBlips = [];
         }
     }
 
@@ -131,6 +143,18 @@ export class AudioVisualizer {
                 break;
             case 'prism':
                 this.drawPrism(dataArray, w, h);
+                break;
+            case 'pulsar':
+                this.drawPulsar(dataArray, w, h);
+                break;
+            case 'horizon':
+                this.drawHorizon(dataArray, w, h);
+                break;
+            case 'synapse':
+                this.drawSynapse(dataArray, w, h);
+                break;
+            case 'sonar':
+                this.drawSonar(dataArray, w, h);
                 break;
             case 'spectrum':
             default:
@@ -974,6 +998,663 @@ export class AudioVisualizer {
     }
 
     /**
+     * MODO 9: Pulsar Cósmico & Ondas de Choque Estelares (Cosmic Pulsar & Shockwaves)
+     */
+    drawPulsar(dataArray, w, h) {
+        const ctx = this.ctx;
+        const cx = w / 2;
+        const cy = h / 2;
+
+        // Frequências
+        const bassSum = (dataArray[0] + dataArray[1] + dataArray[2] + dataArray[3]) / (4 * 255);
+        const midSum = (dataArray[8] + dataArray[12] + dataArray[16] + dataArray[20]) / (4 * 255);
+        const trebleSum = (dataArray[28] + dataArray[36] + dataArray[44]) / (3 * 255);
+        const totalEnergy = bassSum * 0.5 + midSum * 0.35 + trebleSum * 0.15;
+
+        this.pulsarPhase = (this.pulsarPhase || 0) + 0.03 + totalEnergy * 0.05;
+
+        // 1. Inicializar estrelas orbitais de fundo se necessário
+        if (!this.pulsarStars || this.pulsarStars.length === 0) {
+            this.pulsarStars = [];
+            for (let i = 0; i < 36; i++) {
+                this.pulsarStars.push({
+                    baseAngle: Math.random() * Math.PI * 2,
+                    orbitX: 35 + Math.random() * (w * 0.44),
+                    orbitY: 10 + Math.random() * (h * 0.36),
+                    speed: (0.3 + Math.random() * 0.7) * (Math.random() > 0.5 ? 1 : -1),
+                    size: 0.8 + Math.random() * 1.5,
+                    hue: Math.random() > 0.4 ? 195 : 280
+                });
+            }
+        }
+
+        // 2. Ondas de Choque Gravitacionais Expansivas (Shockwaves acionadas por graves)
+        if (!this.pulsarShockwaves) this.pulsarShockwaves = [];
+        if (bassSum > 0.14 && this.pulsarShockwaves.length < 8 && Math.random() < 0.38) {
+            this.pulsarShockwaves.push({
+                rx: 10,
+                speed: 2.2 + bassSum * 5.0,
+                maxRx: w * 0.46,
+                alpha: 0.85,
+                hue: 185 + Math.random() * 85 // Ciano ao Violeta
+            });
+        }
+
+        // Renderizar Shockwaves
+        ctx.save();
+        for (let i = this.pulsarShockwaves.length - 1; i >= 0; i--) {
+            const sw = this.pulsarShockwaves[i];
+            sw.rx += sw.speed;
+            const swRy = sw.rx * 0.35;
+            sw.alpha *= 0.96;
+
+            if (sw.rx >= sw.maxRx || sw.alpha <= 0.02) {
+                this.pulsarShockwaves.splice(i, 1);
+                continue;
+            }
+
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, sw.rx, swRy, 0, 0, Math.PI * 2);
+            ctx.strokeStyle = `hsla(${sw.hue}, 90%, 65%, ${sw.alpha})`;
+            ctx.lineWidth = 1.5 + sw.alpha * 1.5;
+            ctx.shadowColor = `hsl(${sw.hue}, 90%, 60%)`;
+            ctx.shadowBlur = 8;
+            ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+        ctx.restore();
+
+        // 3. Estrelas / Poeira Cósmica em Órbita Gravitacional
+        this.pulsarStars.forEach(star => {
+            const angle = star.baseAngle + this.pulsarPhase * star.speed;
+            const currentOrbitX = star.orbitX + bassSum * 20;
+            const currentOrbitY = star.orbitY + bassSum * 8;
+            const sx = cx + Math.cos(angle) * currentOrbitX;
+            const sy = cy + Math.sin(angle) * currentOrbitY;
+
+            const alpha = 0.35 + totalEnergy * 0.55;
+            ctx.beginPath();
+            ctx.arc(sx, sy, star.size + totalEnergy * 1.2, 0, Math.PI * 2);
+            ctx.fillStyle = `hsla(${star.hue}, 90%, 75%, ${alpha})`;
+            if (totalEnergy > 0.15) {
+                ctx.shadowColor = `hsl(${star.hue}, 90%, 70%)`;
+                ctx.shadowBlur = 6;
+            }
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        });
+
+        // 4. Feixes Relativísticos Horizontais (Horizontal Energy Beams emitidos pelas pontas)
+        const jetSegments = 24;
+        const maxJetLen = w * 0.46;
+
+        ['left', 'right'].forEach(dir => {
+            const sign = dir === 'left' ? -1 : 1;
+            const jetPoints = [];
+            jetPoints.push({ x: cx, y: cy });
+
+            for (let j = 1; j <= jetSegments; j++) {
+                const ratio = j / jetSegments;
+                const jx = cx + sign * (ratio * maxJetLen);
+                const dataIdx = Math.floor(ratio * (dataArray.length * 0.5));
+                const freqVal = (dataArray[dataIdx] || 0) / 255;
+
+                // Ondulação do feixe com atenuação nas extremidades
+                const envelope = Math.sin(ratio * Math.PI);
+                const jitter = Math.sin(this.pulsarPhase * 3.5 + j * 0.45) * (1.5 + freqVal * (h * 0.22)) * envelope;
+                const jy = cy + jitter;
+                jetPoints.push({ x: jx, y: jy, freqVal });
+            }
+
+            // Glow do feixe
+            ctx.beginPath();
+            ctx.moveTo(jetPoints[0].x, jetPoints[0].y);
+            for (let j = 1; j < jetPoints.length; j++) {
+                ctx.lineTo(jetPoints[j].x, jetPoints[j].y);
+            }
+            ctx.strokeStyle = `rgba(56, 189, 248, ${0.25 + totalEnergy * 0.45})`;
+            ctx.lineWidth = 4 + totalEnergy * 4;
+            ctx.shadowColor = '#38bdf8';
+            ctx.shadowBlur = 10;
+            ctx.stroke();
+
+            // Núcleo do feixe (branco/ciano intenso)
+            ctx.beginPath();
+            ctx.moveTo(jetPoints[0].x, jetPoints[0].y);
+            for (let j = 1; j < jetPoints.length; j++) {
+                ctx.lineTo(jetPoints[j].x, jetPoints[j].y);
+            }
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.2 + totalEnergy * 0.8;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        });
+
+        // 5. Anéis de Acreção 3D Inclinados (Magnetic Accretion Rings)
+        const rings = [
+            { rx: 32 + bassSum * 38, ry: 10 + bassSum * 12, tilt: -0.22, color: 'rgba(245, 158, 11, ', glow: '#f59e0b' }, // Ouro/Âmbar
+            { rx: 62 + midSum * 50, ry: 18 + midSum * 16, tilt: 0.18, color: 'rgba(56, 189, 248, ', glow: '#38bdf8' },    // Ciano
+            { rx: 94 + trebleSum * 56, ry: 26 + trebleSum * 18, tilt: -0.35, color: 'rgba(192, 132, 252, ', glow: '#c084fc' } // Violeta
+        ];
+
+        rings.forEach((ring, idx) => {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(ring.tilt + Math.sin(this.pulsarPhase * 0.8 + idx) * 0.08);
+
+            ctx.beginPath();
+            ctx.ellipse(0, 0, ring.rx, ring.ry, 0, 0, Math.PI * 2);
+            ctx.strokeStyle = `${ring.color}${0.35 + totalEnergy * 0.55})`;
+            ctx.lineWidth = 1.5;
+            ctx.shadowColor = ring.glow;
+            ctx.shadowBlur = 8 + totalEnergy * 8;
+            ctx.stroke();
+
+            // Ponto orbital de luz no anel
+            const ringAngle = this.pulsarPhase * (1.2 + idx * 0.4);
+            const spotX = Math.cos(ringAngle) * ring.rx;
+            const spotY = Math.sin(ringAngle) * ring.ry;
+            ctx.beginPath();
+            ctx.arc(spotX, spotY, 2 + totalEnergy * 1.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = ring.glow;
+            ctx.shadowBlur = 10;
+            ctx.fill();
+
+            ctx.restore();
+        });
+
+        // 6. Núcleo Central do Pulsar (Super-Luminous Stellar Core)
+        const coreRadius = Math.max(5, 7 + bassSum * 16);
+        const coreGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreRadius * 2.5);
+        coreGlow.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+        coreGlow.addColorStop(0.3, 'rgba(56, 189, 248, 0.8)');
+        coreGlow.addColorStop(0.6, 'rgba(129, 140, 248, 0.4)');
+        coreGlow.addColorStop(1, 'rgba(15, 23, 42, 0)');
+
+        ctx.fillStyle = coreGlow;
+        ctx.beginPath();
+        ctx.arc(cx, cy, coreRadius * 2.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Núcleo branco sólido
+        ctx.beginPath();
+        ctx.arc(cx, cy, coreRadius * 0.55, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#38bdf8';
+        ctx.shadowBlur = 14 + bassSum * 14;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Picos de Difração Estelar (4-Spike Stellar Diffraction)
+        if (totalEnergy > 0.08) {
+            const spikeLen = coreRadius * (2.0 + totalEnergy * 3.5);
+            ctx.beginPath();
+            // Vertical
+            ctx.moveTo(cx, cy - spikeLen);
+            ctx.lineTo(cx, cy + spikeLen);
+            // Horizontal
+            ctx.moveTo(cx - spikeLen * 1.4, cy);
+            ctx.lineTo(cx + spikeLen * 1.4, cy);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.lineWidth = 1.2;
+            ctx.shadowColor = '#38bdf8';
+            ctx.shadowBlur = 8;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+    }
+
+    /**
+     * MODO 10: Horizonte 3D Synthwave Cibernético (Cyberpunk 3D Perspective Grid)
+     */
+    drawHorizon(dataArray, w, h) {
+        const ctx = this.ctx;
+        const horizonY = h * 0.26;
+        const vx = w / 2;
+        const vy = horizonY;
+
+        // Energia
+        const bassSum = (dataArray[0] + dataArray[1] + dataArray[2] + dataArray[3]) / (4 * 255);
+        const midSum = (dataArray[8] + dataArray[12] + dataArray[16]) / (3 * 255);
+        const energy = bassSum * 0.6 + midSum * 0.4;
+
+        this.horizonPhase = (this.horizonPhase || 0) + 0.025 + bassSum * 0.035;
+
+        // 1. Sol / Aura de Horizonte Neon no Ponto de Fuga
+        const sunRadius = 24 + bassSum * 16;
+        const sunGlow = ctx.createRadialGradient(vx, vy, 2, vx, vy, sunRadius * 1.8);
+        sunGlow.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
+        sunGlow.addColorStop(0.3, 'rgba(244, 63, 94, 0.75)'); // Rose Neon
+        sunGlow.addColorStop(0.7, 'rgba(168, 85, 247, 0.35)'); // Purple
+        sunGlow.addColorStop(1, 'rgba(15, 23, 42, 0)');
+
+        ctx.fillStyle = sunGlow;
+        ctx.beginPath();
+        ctx.arc(vx, vy, sunRadius * 1.8, Math.PI, Math.PI * 2); // Semicírculo superior do sol
+        ctx.fill();
+
+        // 2. Linha do Horizonte Neon Lúmina
+        ctx.beginPath();
+        ctx.moveTo(0, horizonY);
+        ctx.lineTo(w, horizonY);
+        ctx.strokeStyle = `rgba(56, 189, 248, ${0.5 + energy * 0.45})`;
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = '#00f0ff';
+        ctx.shadowBlur = 8 + energy * 10;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // 3. Grid de Perspectiva 3D
+        const cols = 22;
+        const rows = 9;
+        const gridPoints = []; // Matriz [row][col]
+
+        // Offset de rolagem infinita suave (0 a 1)
+        const scrollOffset = (this.horizonPhase % 1.0);
+
+        for (let r = 0; r <= rows; r++) {
+            gridPoints[r] = [];
+            // Fator de profundidade não linear (perspectiva cônica)
+            const rowRatio = Math.max(0, (r + scrollOffset) / (rows + 1));
+            const depthT = Math.pow(rowRatio, 2.1);
+            const rowY = horizonY + depthT * (h - horizonY);
+
+            // Largura expandida pela perspectiva
+            const halfSpread = (w * 0.5) * depthT + 6;
+
+            for (let c = 0; c <= cols; c++) {
+                const colNorm = (c / cols) * 2 - 1; // -1 (esquerda) a +1 (direita)
+                const baseX = vx + colNorm * halfSpread;
+
+                // Frequência de áudio mapeada simetricamente do centro para as bordas
+                const freqDistance = Math.abs(colNorm);
+                const dataIdx = Math.floor(freqDistance * (dataArray.length * 0.6));
+                const audioVal = (dataArray[dataIdx] || 0) / 255;
+
+                // Elevação de terreno: montanhas que se erguem com o som
+                const elevation = (audioVal * (h * 0.36) + (r === rows ? bassSum * 8 : 0)) * depthT;
+                const ptY = Math.max(horizonY - 8, rowY - elevation);
+
+                gridPoints[r][c] = { x: baseX, y: ptY, audioVal, depthT };
+            }
+        }
+
+        // 4. Renderizar Linhas Transversais (Horizontais Onduladas)
+        for (let r = 0; r <= rows; r++) {
+            const rowPts = gridPoints[r];
+            if (!rowPts || rowPts.length < 2) continue;
+
+            const depthT = rowPts[0].depthT;
+            ctx.beginPath();
+            ctx.moveTo(rowPts[0].x, rowPts[0].y);
+
+            for (let c = 0; c < cols; c++) {
+                const xc = (rowPts[c].x + rowPts[c + 1].x) / 2;
+                const yc = (rowPts[c].y + rowPts[c + 1].y) / 2;
+                ctx.quadraticCurveTo(rowPts[c].x, rowPts[c].y, xc, yc);
+            }
+            ctx.lineTo(rowPts[cols].x, rowPts[cols].y);
+
+            // Gradiente de cor por profundidade: do Violeta no fundo ao Ciano Neon no primeiro plano
+            const hue = 280 - depthT * 95; // 280 (Violeta) -> 185 (Ciano)
+            const alpha = 0.25 + depthT * 0.65;
+            ctx.strokeStyle = `hsla(${hue}, 90%, 65%, ${alpha})`;
+            ctx.lineWidth = 1.0 + depthT * 1.5;
+            if (depthT > 0.4 && energy > 0.1) {
+                ctx.shadowColor = `hsl(${hue}, 90%, 60%)`;
+                ctx.shadowBlur = 6;
+            }
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+
+        // 5. Renderizar Linhas Longitudinais (Raios de Perspectiva)
+        for (let c = 0; c <= cols; c++) {
+            ctx.beginPath();
+            ctx.moveTo(gridPoints[0][c].x, gridPoints[0][c].y);
+
+            for (let r = 0; r < rows; r++) {
+                const nextPt = gridPoints[r + 1][c];
+                ctx.lineTo(nextPt.x, nextPt.y);
+            }
+
+            const centerDist = Math.abs((c / cols) * 2 - 1);
+            ctx.strokeStyle = `rgba(56, 189, 248, ${0.15 + (1 - centerDist * 0.5) * 0.35})`;
+            ctx.lineWidth = 1.0;
+            ctx.stroke();
+        }
+
+        // 6. Nós de Vértice Iluminados (Luminous Grid Vertices nos Picos)
+        for (let r = 2; r <= rows; r++) {
+            for (let c = 0; c <= cols; c++) {
+                const pt = gridPoints[r][c];
+                if (pt.audioVal > 0.28 && pt.depthT > 0.25) {
+                    const nodeRadius = 1.2 + pt.audioVal * 2.2 * pt.depthT;
+                    ctx.beginPath();
+                    ctx.arc(pt.x, pt.y, nodeRadius, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.shadowColor = '#00f0ff';
+                    ctx.shadowBlur = 8;
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                }
+            }
+        }
+
+        // 7. Feixe Laser Telemetria de Varredura no Topo das Montanhas
+        if (energy > 0.12) {
+            const scanY = horizonY + Math.sin(this.horizonPhase * 2.0) * (h * 0.25) + (h * 0.2);
+            ctx.beginPath();
+            ctx.moveTo(0, scanY);
+            ctx.lineTo(w, scanY);
+            ctx.strokeStyle = `rgba(244, 63, 94, ${0.4 + energy * 0.4})`;
+            ctx.lineWidth = 1.2;
+            ctx.shadowColor = '#f43f5e';
+            ctx.shadowBlur = 8;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+    }
+
+    /**
+     * MODO 11: Rede Neural & Impulsos Sinápticos (Synaptic Neural Network)
+     */
+    drawSynapse(dataArray, w, h) {
+        const ctx = this.ctx;
+        const bassSum = (dataArray[0] + dataArray[1] + dataArray[2] + dataArray[3]) / (4 * 255);
+        const midSum = (dataArray[8] + dataArray[12] + dataArray[16]) / (3 * 255);
+        const trebleSum = (dataArray[24] + dataArray[32] + dataArray[40]) / (3 * 255);
+        const totalEnergy = bassSum * 0.5 + midSum * 0.35 + trebleSum * 0.15;
+
+        this.synapsePhase = (this.synapsePhase || 0) + 0.03 + totalEnergy * 0.04;
+
+        // 1. Inicializar ou recalcular nós da rede neural
+        const nodeCount = 30;
+        if (!this.synapseNodes || this.synapseNodes.length !== nodeCount || this.lastSynapseW !== w) {
+            this.lastSynapseW = w;
+            this.synapseNodes = [];
+            for (let i = 0; i < nodeCount; i++) {
+                const col = i % 6;
+                const row = Math.floor(i / 6);
+                const baseX = (col + 0.5) * (w / 6);
+                const baseY = (row + 0.5) * (h / 5);
+                this.synapseNodes.push({
+                    x: baseX + (Math.sin(i * 1.7) * (w / 14)),
+                    y: Math.max(8, Math.min(h - 8, baseY + (Math.cos(i * 2.3) * (h / 12)))),
+                    baseSize: 2 + (i % 3) * 1.2,
+                    connections: [],
+                    cluster: i % 3, // 0: Bass, 1: Mid, 2: Treble
+                    energy: 0
+                });
+            }
+
+            // Estabelecer conexões de axônio entre vizinhos próximos (distância < w / 4)
+            const maxDist = w * 0.26;
+            for (let i = 0; i < nodeCount; i++) {
+                for (let j = i + 1; j < nodeCount; j++) {
+                    const dx = this.synapseNodes[i].x - this.synapseNodes[j].x;
+                    const dy = this.synapseNodes[i].y - this.synapseNodes[j].y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < maxDist && this.synapseNodes[i].connections.length < 3) {
+                        this.synapseNodes[i].connections.push(j);
+                    }
+                }
+            }
+        }
+
+        // 2. Atualizar energia de cada nó baseada nas bandas de áudio
+        this.synapseNodes.forEach((node, idx) => {
+            let targetEnergy = 0;
+            if (node.cluster === 0) targetEnergy = bassSum;
+            else if (node.cluster === 1) targetEnergy = midSum;
+            else targetEnergy = trebleSum;
+
+            const jitter = Math.sin(this.synapsePhase + idx) * 0.08;
+            node.energy = Math.max(0, targetEnergy + jitter);
+        });
+
+        // 3. Gerar novos impulsos elétricos sinápticos (Action Potential Sparks)
+        if (!this.synapsePulses) this.synapsePulses = [];
+        if (totalEnergy > 0.1 && this.synapsePulses.length < 24 && Math.random() < 0.45) {
+            const fromIdx = Math.floor(Math.random() * nodeCount);
+            const fromNode = this.synapseNodes[fromIdx];
+            if (fromNode && fromNode.connections.length > 0) {
+                const toIdx = fromNode.connections[Math.floor(Math.random() * fromNode.connections.length)];
+                this.synapsePulses.push({
+                    from: fromIdx,
+                    to: toIdx,
+                    progress: 0,
+                    speed: 0.035 + totalEnergy * 0.06,
+                    hue: 160 + Math.random() * 120 // Esmeralda -> Ciano -> Violeta
+                });
+            }
+        }
+
+        // 4. Renderizar Axônios / Filamentos Conectores
+        ctx.save();
+        for (let i = 0; i < nodeCount; i++) {
+            const na = this.synapseNodes[i];
+            na.connections.forEach(toIdx => {
+                const nb = this.synapseNodes[toIdx];
+                if (!nb) return;
+
+                const connEnergy = (na.energy + nb.energy) * 0.5;
+                const alpha = Math.min(0.85, 0.12 + connEnergy * 0.65);
+                const strokeColor = connEnergy > 0.25 ? `hsla(185, 90%, 65%, ${alpha})` : `rgba(56, 189, 248, ${alpha})`;
+
+                ctx.beginPath();
+                ctx.moveTo(na.x, na.y);
+                ctx.lineTo(nb.x, nb.y);
+                ctx.strokeStyle = strokeColor;
+                ctx.lineWidth = 1 + connEnergy * 1.8;
+                if (connEnergy > 0.3) {
+                    ctx.shadowColor = '#38bdf8';
+                    ctx.shadowBlur = 6;
+                }
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+            });
+        }
+
+        // 5. Renderizar Impulsos Sinápticos em Movimento
+        for (let p = this.synapsePulses.length - 1; p >= 0; p--) {
+            const pulse = this.synapsePulses[p];
+            pulse.progress += pulse.speed;
+
+            if (pulse.progress >= 1.0) {
+                this.synapsePulses.splice(p, 1);
+                continue;
+            }
+
+            const na = this.synapseNodes[pulse.from];
+            const nb = this.synapseNodes[pulse.to];
+            if (!na || !nb) continue;
+
+            const px = na.x + (nb.x - na.x) * pulse.progress;
+            const py = na.y + (nb.y - na.y) * pulse.progress;
+
+            ctx.beginPath();
+            ctx.arc(px, py, 2.2 + totalEnergy * 1.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = `hsl(${pulse.hue}, 90%, 60%)`;
+            ctx.shadowBlur = 8;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+
+        // 6. Renderizar Corpos Neuronais (Soma / Neurônios)
+        this.synapseNodes.forEach(node => {
+            const r = Math.max(2, node.baseSize + node.energy * 5);
+            const hue = node.cluster === 0 ? 195 : (node.cluster === 1 ? 275 : 155);
+
+            // Aura de neurotransmissor
+            if (node.energy > 0.15) {
+                const aura = ctx.createRadialGradient(node.x, node.y, 1, node.x, node.y, r * 2.2);
+                aura.addColorStop(0, `hsla(${hue}, 90%, 65%, 0.7)`);
+                aura.addColorStop(1, 'rgba(15, 23, 42, 0)');
+                ctx.fillStyle = aura;
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, r * 2.2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Núcleo do neurônio
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+            ctx.fillStyle = node.energy > 0.28 ? '#ffffff' : `hsl(${hue}, 85%, 65%)`;
+            ctx.shadowColor = `hsl(${hue}, 90%, 60%)`;
+            ctx.shadowBlur = 6 + node.energy * 8;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        });
+
+        ctx.restore();
+    }
+
+    /**
+     * MODO 12: Radar Tático & Sonar Acústico (Tactical Sonar Sweep HUD)
+     */
+    drawSonar(dataArray, w, h) {
+        const ctx = this.ctx;
+        const cx = w / 2;
+        const cy = h / 2;
+        const maxR = Math.min(w * 0.44, h * 0.46);
+
+        const bassSum = (dataArray[0] + dataArray[1] + dataArray[2] + dataArray[3]) / (4 * 255);
+        const midSum = (dataArray[8] + dataArray[12] + dataArray[16]) / (3 * 255);
+        const totalEnergy = bassSum * 0.6 + midSum * 0.4;
+
+        // Ângulo de varredura do sonar
+        this.sonarAngle = (this.sonarAngle || 0) + 0.032 + (bassSum * 0.035);
+
+        ctx.save();
+
+        // 1. Eixos Cruzados e Retículo Tático
+        ctx.beginPath();
+        ctx.moveTo(cx - maxR - 10, cy);
+        ctx.lineTo(cx + maxR + 10, cy);
+        ctx.moveTo(cx, cy - maxR - 8);
+        ctx.lineTo(cx, cy + maxR + 8);
+        ctx.strokeStyle = 'rgba(16, 185, 129, 0.25)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Marcadores de escala (Ticks métricos)
+        const ticks = 4;
+        for (let t = 1; t <= ticks; t++) {
+            const tr = (t / ticks) * maxR;
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, tr, tr * 0.9, 0, 0, Math.PI * 2);
+            ctx.strokeStyle = t === ticks ? 'rgba(52, 211, 153, 0.45)' : 'rgba(16, 185, 129, 0.15)';
+            ctx.lineWidth = t === ticks ? 1.5 : 1;
+            ctx.stroke();
+        }
+
+        // 2. Setor Fosfórico da Varredura (Trailing Phosphor Glow)
+        const trailSpan = Math.PI * 0.38; // 68 graus de rastro
+        const steps = 14;
+        for (let s = 0; s < steps; s++) {
+            const a1 = this.sonarAngle - (s / steps) * trailSpan;
+            const a2 = this.sonarAngle - ((s + 1) / steps) * trailSpan;
+            const alpha = (1 - s / steps) * (0.18 + totalEnergy * 0.18);
+
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.arc(cx, cy, maxR, a2, a1);
+            ctx.closePath();
+            ctx.fillStyle = `rgba(16, 185, 129, ${alpha})`;
+            ctx.fill();
+        }
+
+        // 3. Raio Principal de Alta Potência (Sweep Beam Line)
+        const beamX = cx + Math.cos(this.sonarAngle) * maxR;
+        const beamY = cy + Math.sin(this.sonarAngle) * maxR;
+
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(beamX, beamY);
+        ctx.strokeStyle = '#6ee7b7';
+        ctx.lineWidth = 1.8;
+        ctx.shadowColor = '#34d399';
+        ctx.shadowBlur = 8;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // 4. Forma de Onda Circular Acústica em Tempo Real (Radial Waveform)
+        const wavePoints = 48;
+        ctx.beginPath();
+        for (let i = 0; i <= wavePoints; i++) {
+            const angle = (i / wavePoints) * Math.PI * 2;
+            const dataIdx = Math.floor((i / wavePoints) * (dataArray.length * 0.65));
+            const freqVal = (dataArray[dataIdx] || 0) / 255;
+            const waveR = maxR * 0.72 + freqVal * (maxR * 0.26);
+
+            const wx = cx + Math.cos(angle) * waveR;
+            const wy = cy + Math.sin(angle) * (waveR * 0.9);
+
+            if (i === 0) ctx.moveTo(wx, wy);
+            else ctx.lineTo(wx, wy);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = `rgba(52, 211, 153, ${0.45 + totalEnergy * 0.45})`;
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+
+        // 5. Contatos e Ecos de Alvo Acústico (Sonar Blips & Echo Rings)
+        if (!this.sonarBlips) this.sonarBlips = [];
+        if (totalEnergy > 0.14 && this.sonarBlips.length < 6 && Math.random() < 0.25) {
+            const blipDist = 18 + Math.random() * (maxR * 0.85);
+            this.sonarBlips.push({
+                x: cx + Math.cos(this.sonarAngle) * blipDist,
+                y: cy + Math.sin(this.sonarAngle) * (blipDist * 0.9),
+                life: 1.0,
+                maxRipple: 28 + totalEnergy * 20,
+                rippleR: 0
+            });
+        }
+
+        // Renderizar blips e ondas de eco
+        for (let b = this.sonarBlips.length - 1; b >= 0; b--) {
+            const blip = this.sonarBlips[b];
+            blip.life -= 0.025;
+            blip.rippleR += 1.4;
+
+            if (blip.life <= 0 || blip.rippleR > blip.maxRipple) {
+                this.sonarBlips.splice(b, 1);
+                continue;
+            }
+
+            // Anel de eco em expansão
+            ctx.beginPath();
+            ctx.arc(blip.x, blip.y, blip.rippleR, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(52, 211, 153, ${blip.life * 0.75})`;
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+
+            // Ponto de contato tático
+            ctx.beginPath();
+            ctx.arc(blip.x, blip.y, 2.2, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = '#34d399';
+            ctx.shadowBlur = 8;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+
+        // 6. Núcleo Emissor Central (Transducer Hub)
+        ctx.beginPath();
+        ctx.arc(cx, cy, 3.5 + totalEnergy * 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#6ee7b7';
+        ctx.shadowColor = '#34d399';
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        ctx.restore();
+    }
+
+    /**
      * ESTADO DE STANDBY / AMBIENTE (Animação Suave quando Inativo)
      */
     drawIdleState(w, h) {
@@ -1026,6 +1707,9 @@ export class AudioVisualizer {
         this.peaks = [];
         this.peakHold = [];
         this.electricSparks = [];
+        this.pulsarShockwaves = [];
+        this.synapsePulses = [];
+        this.sonarBlips = [];
         this.updateAmbientGlow(0);
         if (this.onVuUpdate) this.onVuUpdate(0, -60);
     }
